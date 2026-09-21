@@ -17,6 +17,16 @@
         <canvas id="output-canvas"></canvas>
       </div>
 
+      <!-- 画面上部：メロディ＆運指ガイドバー -->
+      <div id="song-guide-panel" class="song-guide-panel">
+        <div class="song-header">
+          <span class="song-title">メリーさんの羊</span>
+          <span id="song-phrase-label" class="song-phrase-badge">PHRASE 1 / 4</span>
+          <span id="song-step-progress" class="song-step-badge">1 / 25</span>
+        </div>
+        <div class="song-notes-stream" id="song-notes-stream"></div>
+      </div>
+
       <!-- デバッグHUD（左下） -->
       <div id="debug-panel" class="debug-panel">
         <div class="debug-row">
@@ -40,10 +50,10 @@
         <div class="debug-divider"></div>
         <div class="debug-row">
           <span class="debug-label">TARGET:</span>
-          <span id="target-finger-val" class="debug-val">THUMB</span>
+          <span id="target-finger-val" class="debug-val">3 ミ (MIDDLE)</span>
           <span class="debug-separator">/</span>
-          <span class="debug-label">HIT:</span>
-          <span id="target-tap-progress" class="debug-val">0 / 2</span>
+          <span class="debug-label">STEP:</span>
+          <span id="target-tap-progress" class="debug-val">1 / 25</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">TIP X:</span>

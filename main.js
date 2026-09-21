@@ -29,6 +29,9 @@ const csvFileInput = document.getElementById("csv-file-input");
 const testSoundBtn = document.getElementById("test-sound-btn");
 const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
+const songPhraseLabel = document.getElementById("song-phrase-label");
+const songStepProgress = document.getElementById("song-step-progress");
+const songNotesStream = document.getElementById("song-notes-stream");
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -68,8 +71,9 @@ function ensureAudioContext() {
 }
 
 /**
- * ゼロ遅延の打鍵音生成（指数減衰ピアノ風トーン）
- * @param {number} freq 周波数 (デフォルト: 523.25Hz = C5)
+ * ドレミファソが明瞭に聴き分けられるリッチなピアノ音響合成
+ * 基音（Triangle）+ 第2倍音（Sine）+ 低域レゾナンスによる温かみのあるピアノ音色
+ * @param {number} freq 周波数 (Hz)
  */
 export function playTapSound(freq = 523.25) {
   const ctx = ensureAudioContext();
@@ -80,23 +84,50 @@ export function playTapSound(freq = 523.25) {
   }
 
   const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
+  const masterGain = ctx.createGain();
 
-  // トライアングル波（ピアノに似た豊かな倍音成分）
-  osc.type = "triangle";
-  osc.frequency.setValueAtTime(freq, now);
+  // 1. 基音（Triangle波：ピアノの本体の芯のある音）
+  const oscBase = ctx.createOscillator();
+  const gainBase = ctx.createGain();
+  oscBase.type = "triangle";
+  oscBase.frequency.setValueAtTime(freq, now);
+  gainBase.gain.setValueAtTime(0.40, now);
+  oscBase.connect(gainBase);
+  gainBase.connect(masterGain);
 
-  // 明瞭なエンベロープ（3msで立ち上がり、約0.18秒で自然に減衰）
-  gain.gain.setValueAtTime(0.001, now);
-  gain.gain.linearRampToValueAtTime(0.50, now + 0.003);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  // 2. 第2倍音（Sine波：ピアノ弦の輝きと明るさ・オクターブ上）
+  const oscHarmonic = ctx.createOscillator();
+  const gainHarmonic = ctx.createGain();
+  oscHarmonic.type = "sine";
+  oscHarmonic.frequency.setValueAtTime(freq * 2, now);
+  gainHarmonic.gain.setValueAtTime(0.20, now);
+  oscHarmonic.connect(gainHarmonic);
+  gainHarmonic.connect(masterGain);
 
-  osc.connect(gain);
-  gain.connect(ctx.destination);
+  // 3. 第3倍音（Sine波：アタック時の明瞭度・音階の識別性を向上）
+  const oscAttack = ctx.createOscillator();
+  const gainAttack = ctx.createGain();
+  oscAttack.type = "sine";
+  oscAttack.frequency.setValueAtTime(freq * 3, now);
+  gainAttack.gain.setValueAtTime(0.10, now);
+  gainAttack.gain.exponentialRampToValueAtTime(0.001, now + 0.08); // すぐに減衰して打鍵感のみを演出
+  oscAttack.connect(gainAttack);
+  gainAttack.connect(masterGain);
 
-  osc.start(now);
-  osc.stop(now + 0.19);
+  // 全体エンベロープ（2msで立ち上がり、約0.26秒で自然な余韻を持って減衰）
+  masterGain.gain.setValueAtTime(0.001, now);
+  masterGain.gain.linearRampToValueAtTime(0.65, now + 0.003);
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+
+  masterGain.connect(ctx.destination);
+
+  oscBase.start(now);
+  oscHarmonic.start(now);
+  oscAttack.start(now);
+
+  oscBase.stop(now + 0.27);
+  oscHarmonic.stop(now + 0.27);
+  oscAttack.stop(now + 0.27);
 
   // カウント更新
   tapCount++;
@@ -195,12 +226,13 @@ class PointFilter {
   }
 }
 
-// 対象指の定義（親指〜小指までの全指）
+// 対象指の定義（親指〜小指までの全指・ハ長調基本ポジション C5〜G5）
 export const FINGER_CONFIGS = {
   THUMB: {
+    fingerNum: 1,
     key: "THUMB",
-    label: "親指 (THUMB)",
-    freq: 523.25, // C5
+    label: "親指 (1: ド)",
+    freq: 523.25, // C5 (ド)
     baseIdx: 2,   // MCP (付け根)
     p1Idx: 1,     // CMC
     p2Idx: 2,     // MCP
@@ -209,9 +241,10 @@ export const FINGER_CONFIGS = {
     indices: [1, 2, 3, 4]
   },
   INDEX: {
+    fingerNum: 2,
     key: "INDEX",
-    label: "人差し指 (INDEX)",
-    freq: 587.33, // D5
+    label: "人差し指 (2: レ)",
+    freq: 587.33, // D5 (レ)
     baseIdx: 5,   // MCP
     p1Idx: 5,     // MCP
     p2Idx: 6,     // PIP
@@ -220,9 +253,10 @@ export const FINGER_CONFIGS = {
     indices: [5, 6, 7, 8]
   },
   MIDDLE: {
+    fingerNum: 3,
     key: "MIDDLE",
-    label: "中指 (MIDDLE)",
-    freq: 659.25, // E5
+    label: "中指 (3: ミ)",
+    freq: 659.25, // E5 (ミ)
     baseIdx: 9,   // MCP
     p1Idx: 9,     // MCP
     p2Idx: 10,    // PIP
@@ -231,9 +265,10 @@ export const FINGER_CONFIGS = {
     indices: [9, 10, 11, 12]
   },
   RING: {
+    fingerNum: 4,
     key: "RING",
-    label: "薬指 (RING)",
-    freq: 783.99, // G5
+    label: "薬指 (4: ファ)",
+    freq: 698.46, // F5 (ファ)
     baseIdx: 13,  // MCP
     p1Idx: 13,    // MCP
     p2Idx: 14,    // PIP
@@ -242,9 +277,10 @@ export const FINGER_CONFIGS = {
     indices: [13, 14, 15, 16]
   },
   PINKY: {
+    fingerNum: 5,
     key: "PINKY",
-    label: "小指 (PINKY)",
-    freq: 1046.50, // C6
+    label: "小指 (5: ソ)",
+    freq: 783.99, // G5 (ソ)
     baseIdx: 17,  // MCP
     p1Idx: 17,    // MCP
     p2Idx: 18,    // PIP
@@ -254,13 +290,45 @@ export const FINGER_CONFIGS = {
   }
 };
 
-// 親指から順番に2回ずつ自動選択されるシーケンス定義（親指→人差し指→中指→薬指→小指）
-export const FINGER_SEQUENCE = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
-export const TAPS_PER_FINGER = 2;
+// 「メリーさんの羊」運指・音名シーケンス定義（右手基準・全25音）
+// 1:親指(ド), 2:人差し指(レ), 3:中指(ミ), 4:薬指(ファ), 5:小指(ソ)
+export const MARY_LAMB_SEQUENCE = [
+  // フレーズ1: ミ レ ド レ ミ ミ ミ (7音)
+  { step: 1, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 3, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 4, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 5, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 6, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 7, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
 
-export let currentSeqIndex = 0;
-export let currentFingerTaps = 0;
-export let currentFingerKey = FINGER_SEQUENCE[0]; // 初期: "THUMB"
+  // フレーズ2: レ レ レ - ミ ソ ソ (6音)
+  { step: 8,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 9,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 10, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 11, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 12, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 13, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+
+  // フレーズ3: ミ レ ド レ ミ ミ ミ (7音)
+  { step: 14, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 15, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 16, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 17, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 18, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 19, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 20, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+
+  // フレーズ4: レ レ ミ レ ド (5音)
+  { step: 21, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 22, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 23, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 24, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 25, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
+];
+
+export let currentSongStep = 0; // 現在の進行ステップ (0 〜 24)
+export let currentFingerKey = MARY_LAMB_SEQUENCE[0].fingerKey; // 初期ターゲット指: "MIDDLE" (3: ミ)
 
 // 選択中の指4点専用の適応フィルター
 const targetPointFilters = {
@@ -303,26 +371,333 @@ export function setTargetFinger(fingerKey) {
   // 指別学習モデルの閾値を適用
   applyFingerThreshold(fingerKey);
 
-  // HUD表示更新
+  console.log(`[FINGER TARGET] ターゲット指: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
+}
+
+/**
+ * メロディ＆運指ガイドUIの更新
+ */
+export function renderSongGuideUI() {
+  const currentItem = MARY_LAMB_SEQUENCE[currentSongStep];
+  if (!currentItem) return;
+
+  if (songPhraseLabel) {
+    songPhraseLabel.textContent = `PHRASE ${currentItem.phrase} / 4`;
+  }
+  if (songStepProgress) {
+    songStepProgress.textContent = `${currentItem.step} / ${MARY_LAMB_SEQUENCE.length}`;
+  }
   if (targetFingerVal) {
-    targetFingerVal.textContent = fingerKey;
+    targetFingerVal.textContent = `${currentItem.fingerNum} ${currentItem.note} (${currentItem.fingerKey})`;
     targetFingerVal.classList.add("spike-highlight");
     setTimeout(() => {
       if (targetFingerVal) targetFingerVal.classList.remove("spike-highlight");
     }, 200);
   }
-  updateTapProgressHud();
+  if (targetTapProgress) {
+    targetTapProgress.textContent = `${currentItem.step} / ${MARY_LAMB_SEQUENCE.length}`;
+  }
 
-  console.log(`[FINGER SEQ] ターゲット指を変更: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
+  // 画面上部の音符ストリームUIを描画
+  if (songNotesStream) {
+    const total = MARY_LAMB_SEQUENCE.length;
+    const startIdx = Math.max(0, currentSongStep - 2);
+    const endIdx = Math.min(total, currentSongStep + 6);
+
+    let html = "";
+    for (let i = startIdx; i < endIdx; i++) {
+      const item = MARY_LAMB_SEQUENCE[i];
+      let statusClass = "";
+      if (i < currentSongStep) {
+        statusClass = "done";
+      } else if (i === currentSongStep) {
+        statusClass = "current";
+      }
+
+      html += `
+        <div class="note-chip ${statusClass}">
+          <span class="note-chip-num">${item.fingerNum}</span>
+          <span class="note-chip-name">${item.note}</span>
+        </div>
+      `;
+    }
+    songNotesStream.innerHTML = html;
+  }
 }
 
 /**
- * 指別打鍵進捗HUDの更新
+ * 現在の音符のハイライト色を取得
+ * - 複数弾く指（同一指の連続）：1打目＝黄色、2打目＝緑色、3打目＝青色
+ * - 単発（1回のみ弾く指）：水色（シアン）
+ * @param {number} stepIndex
  */
-export function updateTapProgressHud() {
-  if (targetTapProgress) {
-    targetTapProgress.textContent = `${currentFingerTaps} / ${TAPS_PER_FINGER}`;
+export function getTargetFingerColor(stepIndex) {
+  const current = MARY_LAMB_SEQUENCE[stepIndex];
+  if (!current) {
+    return {
+      stroke: "rgba(0, 229, 255, 0.95)",
+      glow: "rgba(0, 229, 255, 0.8)",
+      fill: "#00e5ff",
+      name: "cyan"
+    };
   }
+
+  // 連続打鍵グループの先頭を探索
+  let start = stepIndex;
+  while (start > 0 && MARY_LAMB_SEQUENCE[start - 1].fingerKey === current.fingerKey) {
+    start--;
+  }
+
+  // 連続打鍵グループの末尾を探索
+  let end = stepIndex;
+  while (end < MARY_LAMB_SEQUENCE.length - 1 && MARY_LAMB_SEQUENCE[end + 1].fingerKey === current.fingerKey) {
+    end++;
+  }
+
+  const groupLen = end - start + 1;
+  const idxInGroup = stepIndex - start; // 0: 1打目, 1: 2打目, 2: 3打目
+
+  if (groupLen > 1) {
+    if (idxInGroup === 0) {
+      // 1打目: 黄色 (Yellow)
+      return {
+        stroke: "rgba(255, 230, 0, 0.95)",
+        glow: "rgba(255, 230, 0, 0.85)",
+        fill: "#fff700",
+        name: "yellow"
+      };
+    } else if (idxInGroup === 1) {
+      // 2打目: 緑色 (Green)
+      return {
+        stroke: "rgba(0, 255, 136, 0.95)",
+        glow: "rgba(0, 255, 136, 0.85)",
+        fill: "#00ff88",
+        name: "green"
+      };
+    } else {
+      // 3打目: 青色 (Blue)
+      return {
+        stroke: "rgba(0, 180, 255, 0.95)",
+        glow: "rgba(0, 180, 255, 0.85)",
+        fill: "#00b4d8",
+        name: "blue"
+      };
+    }
+  }
+
+  // 単発: 水色 (Cyan)
+  return {
+    stroke: "rgba(0, 229, 255, 0.95)",
+    glow: "rgba(0, 229, 255, 0.85)",
+    fill: "#00e5ff",
+    name: "cyan"
+  };
+}
+
+// 演奏時エフェクト（波紋＆光粒子）管理配列
+export const tapVisualEffects = [];
+
+/**
+ * 打鍵時の指先演奏エフェクト（波紋サークル＋微小光パーティクル）を生成
+ * @param {number} x
+ * @param {number} y
+ * @param {object} color
+ */
+export function spawnTapEffect(x, y, color) {
+  // 1. 光の波紋リング（外側へ大きく広がるダイナミックパルス）
+  tapVisualEffects.push({
+    type: "ring",
+    x,
+    y,
+    radius: 12,
+    maxRadius: 80,
+    stroke: color.stroke,
+    glow: color.glow,
+    alpha: 1.0,
+    growth: 3.2,
+    decay: 0.032
+  });
+
+  // 2. 弾ける微小光パーティクル（8個・大きく鮮やかに飛散）
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8 + (Math.random() - 0.5) * 0.4;
+    const speed = 2.4 + Math.random() * 3.2;
+    tapVisualEffects.push({
+      type: "particle",
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius: 3.5 + Math.random() * 2.5,
+      fill: color.fill,
+      glow: color.glow,
+      alpha: 1.0,
+      decay: 0.03 + Math.random() * 0.02
+    });
+  }
+}
+
+/**
+ * 次の指へ飛んでいく光のラインエフェクト（彗星ビーム）を生成
+ * @param {number} fromX 始点X
+ * @param {number} fromY 始点Y
+ * @param {number} toX 終点X
+ * @param {number} toY 終点Y
+ * @param {object} color 次の音符の色
+ */
+export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const dist = Math.hypot(dx, dy);
+
+  // 制御点（始点と終点の中点から上空へ持ち上げてダイナミックなアーチを描く）
+  const midX = (fromX + toX) / 2;
+  const midY = (fromY + toY) / 2 - Math.min(85, Math.max(35, dist * 0.38));
+
+  tapVisualEffects.push({
+    type: "beam",
+    fromX,
+    fromY,
+    toX,
+    toY,
+    midX,
+    midY,
+    progress: 0.0,
+    speed: 0.052, // 約19フレームで滑らかに着弾
+    trail: [],    // 軌跡座標履歴（最大18フレーム保持）
+    color
+  });
+}
+
+/**
+ * 演奏エフェクトの更新＆描画
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function updateAndDrawTapEffects(ctx) {
+  if (tapVisualEffects.length === 0) return;
+
+  ctx.save();
+  for (let i = tapVisualEffects.length - 1; i >= 0; i--) {
+    const fx = tapVisualEffects[i];
+
+    if (fx.type === "beam") {
+      fx.progress += fx.speed;
+      const t = Math.min(1.0, fx.progress);
+
+      // 2次ベジェ曲線補間 B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+      const invT = 1.0 - t;
+      const curX = invT * invT * fx.fromX + 2 * invT * t * fx.midX + t * t * fx.toX;
+      const curY = invT * invT * fx.fromY + 2 * invT * t * fx.midY + t * t * fx.toY;
+
+      // 軌跡の追加（最新座標を先頭へ、最大24個保持して長く濃厚なビームを描く）
+      fx.trail.unshift({ x: curX, y: curY });
+      if (fx.trail.length > 24) {
+        fx.trail.pop();
+      }
+
+      // 極太レーザービームの描画（2層パス：外側ネオン光条 ＋ 内側ホワイトホットコア）
+      if (fx.trail.length > 1) {
+        // パス1: 外側の極太発光ネオンライン（最大14px、強烈なグロー）
+        for (let j = 0; j < fx.trail.length - 1; j++) {
+          const pA = fx.trail[j];
+          const pB = fx.trail[j + 1];
+          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.15);
+
+          ctx.beginPath();
+          ctx.moveTo(pA.x, pA.y);
+          ctx.lineTo(pB.x, pB.y);
+          ctx.shadowColor = fx.color.glow;
+          ctx.shadowBlur = 24 * trailAlpha;
+          ctx.strokeStyle = fx.color.stroke.replace(/[\d.]+\)$/, `${(trailAlpha * 0.95).toFixed(2)})`);
+          ctx.lineWidth = Math.max(3.0, 14.0 * trailAlpha);
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+
+        // パス2: 内側の高輝度ホワイトコアライン（最大6px：芯が真っ白に燃え上がる演出）
+        for (let j = 0; j < fx.trail.length - 1; j++) {
+          const pA = fx.trail[j];
+          const pB = fx.trail[j + 1];
+          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.15);
+
+          ctx.beginPath();
+          ctx.moveTo(pA.x, pA.y);
+          ctx.lineTo(pB.x, pB.y);
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = `rgba(255, 255, 255, ${(trailAlpha * 0.9).toFixed(2)})`;
+          ctx.lineWidth = Math.max(1.5, 6.0 * trailAlpha);
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+      }
+
+      // 先頭の極大発光光球（外側オーラ 半径 10px）
+      ctx.beginPath();
+      ctx.arc(curX, curY, 10.0, 0, 2 * Math.PI);
+      ctx.shadowColor = fx.color.glow;
+      ctx.shadowBlur = 32;
+      ctx.fillStyle = fx.color.fill;
+      ctx.fill();
+
+      // 先頭中心のホワイトホットコア（半径 5px）
+      ctx.beginPath();
+      ctx.arc(curX, curY, 5.0, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+
+      // 終点着弾時
+      if (t >= 1.0) {
+        // 着弾時の光パルス波紋
+        tapVisualEffects.push({
+          type: "ring",
+          x: fx.toX,
+          y: fx.toY,
+          radius: 6,
+          maxRadius: 45,
+          stroke: fx.color.stroke,
+          glow: fx.color.glow,
+          alpha: 0.95,
+          growth: 2.6,
+          decay: 0.05
+        });
+        tapVisualEffects.splice(i, 1);
+      }
+      continue;
+    }
+
+    fx.alpha -= fx.decay;
+
+    if (fx.alpha <= 0) {
+      tapVisualEffects.splice(i, 1);
+      continue;
+    }
+
+    if (fx.type === "ring") {
+      fx.radius += fx.growth;
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, fx.radius, 0, 2 * Math.PI);
+      ctx.shadowColor = fx.glow;
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = fx.stroke.replace(/[\d.]+\)$/, `${fx.alpha.toFixed(2)})`);
+      ctx.lineWidth = 3.5 * fx.alpha;
+      ctx.stroke();
+    } else if (fx.type === "particle") {
+      fx.x += fx.vx;
+      fx.y += fx.vy;
+      fx.vx *= 0.94;
+      fx.vy *= 0.94;
+
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, fx.radius * fx.alpha, 0, 2 * Math.PI);
+      ctx.shadowColor = fx.glow;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = fx.fill;
+      ctx.globalAlpha = Math.max(0, fx.alpha);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }
+  ctx.restore();
 }
 
 /**
@@ -1011,6 +1386,7 @@ function drawRawHandLandmarks(results) {
     targetPointFilters.p3.reset();
     targetPointFilters.tip.reset();
     resetDebugMetrics();
+    updateAndDrawTapEffects(canvasCtx);
     return;
   }
 
@@ -1097,27 +1473,48 @@ function drawRawHandLandmarks(results) {
   const currentRy = (smoothTip.y - smoothBase.y) / (height * L);
   const rawRy = (landmarks[fingerConfig.tipIdx].y - baseLm.y) / L;
 
+  // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
+  const targetColor = getTargetFingerColor(currentSongStep);
+
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
   if (tapState === "IDLE") {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
-      playTapSound(fingerConfig.freq || 523.25); // 指ごとの音階で発音
+      const currentTarget = MARY_LAMB_SEQUENCE[currentSongStep];
+
+      // 正解音階を発音
+      playTapSound(currentTarget.freq);
       updateStateHud("TOUCHED", true);
 
-      // 親指から順に2回ずつ自動カウント
-      currentFingerTaps++;
-      console.log(`[REALTIME TAP] #${tapCount} [${currentFingerKey}] (${currentFingerTaps}/${TAPS_PER_FINGER}) ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`);
+      // 演奏時エフェクト（指先から波紋と微小光パーティクルが弾ける）を生成！
+      spawnTapEffect(smoothTip.x, smoothTip.y, targetColor);
 
-      if (currentFingerTaps >= TAPS_PER_FINGER) {
-        // 2回打鍵完了！次の指へ自動遷移
-        currentFingerTaps = 0;
-        currentSeqIndex = (currentSeqIndex + 1) % FINGER_SEQUENCE.length;
-        const nextFinger = FINGER_SEQUENCE[currentSeqIndex];
-        setTargetFinger(nextFinger);
-      } else {
-        updateTapProgressHud();
-      }
+      console.log(
+        `[SONG HIT] Step ${currentTarget.step}/25 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`
+      );
+
+      // 打鍵直前の指先座標を記録
+      const fromTipX = smoothTip.x;
+      const fromTipY = smoothTip.y;
+
+      // 次の音符へステップ進行
+      currentSongStep = (currentSongStep + 1) % MARY_LAMB_SEQUENCE.length;
+      const nextTarget = MARY_LAMB_SEQUENCE[currentSongStep];
+      const nextColor = getTargetFingerColor(currentSongStep);
+
+      // 次の指先座標（最新ランドマークから取得）
+      const nextFingerCfg = FINGER_CONFIGS[nextTarget.fingerKey] || fingerConfig;
+      const nextTipLm = landmarks[nextFingerCfg.tipIdx];
+      const toTipX = nextTipLm ? nextTipLm.x * width : fromTipX;
+      const toTipY = nextTipLm ? nextTipLm.y * height : fromTipY;
+
+      // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
+      spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
+
+      // 次のターゲット指へ自動切り替えとガイド更新
+      setTargetFinger(nextTarget.fingerKey);
+      renderSongGuideUI();
     }
   } else if (tapState === "TOUCHED") {
     // 指のリフト復帰（閾値を下回ったら待機状態へ）
@@ -1130,9 +1527,14 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 対象指の骨格描画（控えめで繊細な平滑化ライン）
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-  canvasCtx.lineWidth = 1.5;
+  // 5. 指定された指の骨格描画（極太ネオンチューブ＆ホワイトコアのダブルパス描画）
+  canvasCtx.save();
+
+  // パス1: 外側の極太発光ネオンライン（太さ 6.5px、強烈なグロー）
+  canvasCtx.shadowColor = targetColor.glow;
+  canvasCtx.shadowBlur = 24;
+  canvasCtx.strokeStyle = targetColor.stroke;
+  canvasCtx.lineWidth = 6.5;
   canvasCtx.lineCap = "round";
   canvasCtx.lineJoin = "round";
 
@@ -1143,39 +1545,84 @@ function drawRawHandLandmarks(results) {
   canvasCtx.lineTo(smoothTip.x, smoothTip.y);
   canvasCtx.stroke();
 
-  // 対象指関節点（P1, P2, P3）の描画（控えめな小丸）
+  // パス2: 内側の高輝度ホワイトコアライン（太さ 2.6px：芯が白く発光して立体感・視認性を極大化）
+  canvasCtx.shadowBlur = 0;
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+  canvasCtx.lineWidth = 2.6;
+
+  canvasCtx.beginPath();
+  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
+  canvasCtx.lineTo(smoothTip.x, smoothTip.y);
+  canvasCtx.stroke();
+
+  // 対象指関節点（P1, P2, P3）の描画（極太ネオンドット＋白コア）
   [smoothP1, smoothP2, smoothP3].forEach((pt) => {
     canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2.5, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "#ffffff";
+    canvasCtx.arc(pt.x, pt.y, 5.5, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = targetColor.fill;
+    canvasCtx.shadowColor = targetColor.glow;
+    canvasCtx.shadowBlur = 18;
     canvasCtx.fill();
-    canvasCtx.strokeStyle = "rgba(0, 0, 0, 0.6)";
-    canvasCtx.lineWidth = 0.8;
-    canvasCtx.stroke();
+
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 2.8, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = "#ffffff";
+    canvasCtx.shadowBlur = 0;
+    canvasCtx.fill();
   });
 
-  // 6. 対象指先端（TIP）の控えめなミニマルマーカー描画
-  drawTipTargetMark(smoothTip.x, smoothTip.y);
+  // 6. 対象指先端（TIP）のハイライトターゲット描画（極太二重発光リング＋白熱コア）
+  drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
+  canvasCtx.restore();
+
+  // 7. 演奏時エフェクト（波紋＆光パーティクル）のアニメーション更新・描画
+  updateAndDrawTapEffects(canvasCtx);
 }
 
 /**
- * 対象指先端（TIP）のミニマルターゲットマーク描画（洗練された極細リング＋中心ドット）
+ * 対象指先端（TIP）のターゲットマーク描画（極太二重発光リング＋白熱コア）
  * @param {number} x
  * @param {number} y
+ * @param {object} color
  */
-function drawTipTargetMark(x, y) {
-  // 外側の繊細なサークル（半径5px、極細線）
+function drawTipTargetMark(x, y, color) {
+  const strokeColor = color?.stroke || "rgba(0, 229, 255, 0.95)";
+  const fillColor = color?.fill || "#00e5ff";
+  const glowColor = color?.glow || "rgba(0, 229, 255, 0.85)";
+
+  canvasCtx.save();
+  canvasCtx.shadowColor = glowColor;
+  canvasCtx.shadowBlur = 28;
+
+  // 外側の極太発光メインリング（半径13px、線幅 3.5px）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 5, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-  canvasCtx.lineWidth = 1.2;
+  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = strokeColor;
+  canvasCtx.lineWidth = 3.5;
   canvasCtx.stroke();
 
-  // 中心ミニマムドット（半径2px）
+  // 内側の補助リング（半径8px、線幅 1.8px）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
-  canvasCtx.fillStyle = "#ffffff";
+  canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = strokeColor.replace(/[\d.]+\)$/, "0.65)");
+  canvasCtx.lineWidth = 1.8;
+  canvasCtx.stroke();
+
+  // 中心発光ドット（カラー外輪 半径 5.5px + 白熱コア 半径 3.0px）
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 5.5, 0, 2 * Math.PI);
+  canvasCtx.fillStyle = fillColor;
   canvasCtx.fill();
+
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 3.0, 0, 2 * Math.PI);
+  canvasCtx.fillStyle = "#ffffff";
+  canvasCtx.shadowBlur = 0;
+  canvasCtx.fill();
+
+  canvasCtx.restore();
 }
 
 /**
@@ -1293,6 +1740,7 @@ if (csvFileInput) {
   });
 }
 
-// 初期ターゲット指（親指 THUMB）の設定
-setTargetFinger("THUMB");
+// 初期ターゲット指（メリーさんの羊 第1音: 中指 3 ミ）の設定
+setTargetFinger(MARY_LAMB_SEQUENCE[0].fingerKey);
+renderSongGuideUI();
 
