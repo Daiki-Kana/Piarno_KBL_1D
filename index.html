@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Hand Tracking</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- メイン映像コンテナ（ビデオとCanvasを自然比率で完全重畳） -->
+      <div class="video-container">
+        <video id="webcam" playsinline autoplay muted></video>
+        <canvas id="output-canvas"></canvas>
+      </div>
+
+      <!-- デバッグHUD（左下） -->
+      <div id="debug-panel" class="debug-panel">
+        <div class="debug-row">
+          <span class="debug-label">STATUS:</span>
+          <span id="status-text" class="debug-val">初期化中...</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">FPS:</span>
+          <span id="fps-counter" class="debug-val">-</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">TIME:</span>
+          <span id="inference-time" class="debug-val">- ms</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">HANDS:</span>
+          <span id="hands-count" class="debug-val">0</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">CAM:</span>
+          <span id="cam-info" class="debug-val">FRONT</span>
+        </div>
+        <div class="debug-divider"></div>
+        <div class="debug-row">
+          <span class="debug-label">TIP X:</span>
+          <span id="tip-x-val" class="debug-val">-</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">TIP Y:</span>
+          <span id="tip-y-val" class="debug-val">-</span>
+        </div>
+        <div id="error-box" class="debug-error hidden"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

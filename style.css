@@ -1,0 +1,129 @@
+/* ==========================================================================
+   白黒ミニマル - インカメラ鏡像（完全一致）トラッキングUI
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000;
+}
+
+/* ビデオコンテナ：ビデオの自然なアスペクト比に完全一致してサイズが決まる */
+.video-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100vw;
+  max-height: 100vh;
+  line-height: 0; /* 下部の隙間を排除 */
+}
+
+/* インカメラ映像：歪ませずに画面内に最大表示、鏡像（ミラー）反転 */
+#webcam {
+  display: block;
+  max-width: 100vw;
+  max-height: 100vh;
+  width: auto;
+  height: auto;
+  transform: scaleX(-1);
+}
+
+/* 骨格描画Canvas：ビデオと完全に同一点・同一比率で重畳、同じく鏡像反転 */
+#output-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+  pointer-events: none;
+}
+
+/* デバッグHUD（画面左下） */
+.debug-panel {
+  position: absolute;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  background-color: rgba(0, 0, 0, 0.8);
+  border: 1px solid #333333;
+  backdrop-filter: blur(4px);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #cccccc;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.debug-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-label {
+  color: #777777;
+  font-weight: bold;
+}
+
+.debug-sublabel {
+  color: #555555;
+  font-size: 10px;
+}
+
+.debug-val {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.debug-separator {
+  color: #444444;
+  margin: 0 2px;
+}
+
+.debug-divider {
+  width: 100%;
+  height: 1px;
+  background-color: #222222;
+  margin: 2px 0;
+}
+
+/* エラー枠 */
+.debug-error {
+  color: #ff5555;
+  font-weight: bold;
+  margin-top: 4px;
+  border-top: 1px solid #442222;
+  padding-top: 4px;
+  max-width: 320px;
+  word-break: break-word;
+}
+
+.hidden {
+  display: none !important;
+}
