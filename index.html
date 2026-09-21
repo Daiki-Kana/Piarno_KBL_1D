@@ -45,6 +45,33 @@
           <span class="debug-label">TIP Y:</span>
           <span id="tip-y-val" class="debug-val">-</span>
         </div>
+        <div class="debug-row">
+          <span class="debug-label">REL Y:</span>
+          <span id="rel-y-val" class="debug-val">-</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">TH:</span>
+          <span id="th-val" class="debug-val">-</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">STATE:</span>
+          <span id="state-val" class="debug-val">IDLE</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">TAPS:</span>
+          <span id="tap-count-val" class="debug-val">0</span>
+        </div>
+        <div class="debug-divider"></div>
+        <div class="debug-row">
+          <span class="debug-label">CSV:</span>
+          <span id="csv-status" class="debug-val">読み込み中...</span>
+          <label class="csv-upload-btn" title="手元のCSVファイルを追加で読み込む">
+            +FILE
+            <input type="file" id="csv-file-input" multiple accept=".csv" class="hidden" />
+          </label>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">SOUND:</span>
+          <button id="test-sound-btn" class="csv-upload-btn" title="打鍵音のテスト再生">TEST SOUND</button>
+        </div>
         <div id="error-box" class="debug-error hidden"></div>
       </div>
     </div>

@@ -127,3 +127,34 @@ html, body {
 .hidden {
   display: none !important;
 }
+
+/* CSVアップロードボタン / サウンドテストボタン（白黒ミニマル） */
+.csv-upload-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  background-color: transparent;
+  color: #888888;
+  border: 1px solid #444444;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+  user-select: none;
+  margin-left: auto;
+}
+
+.csv-upload-btn:hover {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+/* 打鍵時の一瞬の白黒反転ハイライト */
+.spike-highlight {
+  background-color: #ffffff;
+  color: #000000 !important;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-weight: bold;
+}

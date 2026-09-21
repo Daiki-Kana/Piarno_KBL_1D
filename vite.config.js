@@ -13,6 +13,10 @@ export default defineConfig({
   server: {
     // ローカルネットワーク（同一Wi-Fi上のスマートフォンなど）からアクセス可能にする
     host: true,
-    port: 5173
+    port: 5173,
+    watch: {
+      // 大容量CSVや頻繁なデータ入れ替えによるWindowsファイルロック(EBUSY)を防止
+      ignored: ["**/public/dataset/**"]
+    }
   }
 });
