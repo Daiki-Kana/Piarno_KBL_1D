@@ -27,6 +27,8 @@ const tapCountVal = document.getElementById("tap-count-val");
 const csvStatus = document.getElementById("csv-status");
 const csvFileInput = document.getElementById("csv-file-input");
 const testSoundBtn = document.getElementById("test-sound-btn");
+const targetFingerVal = document.getElementById("target-finger-val");
+const targetTapProgress = document.getElementById("target-tap-progress");
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -56,7 +58,11 @@ function ensureAudioContext() {
     }
   }
   if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
+    audioCtx.resume().then(() => {
+      console.log("[AUDIO] AudioContext resumed successfully (running)");
+    }).catch((err) => {
+      console.warn("[AUDIO] AudioContext resume failed:", err);
+    });
   }
   return audioCtx;
 }
@@ -69,24 +75,28 @@ export function playTapSound(freq = 523.25) {
   const ctx = ensureAudioContext();
   if (!ctx) return;
 
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
-  // トライアングル波（ピアノに似た倍音成分）
+  // トライアングル波（ピアノに似た豊かな倍音成分）
   osc.type = "triangle";
   osc.frequency.setValueAtTime(freq, now);
 
-  // エンベロープ（即座に立ち上がり、約0.15秒で減衰）
+  // 明瞭なエンベロープ（3msで立ち上がり、約0.18秒で自然に減衰）
   gain.gain.setValueAtTime(0.001, now);
-  gain.gain.linearRampToValueAtTime(0.35, now + 0.003);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+  gain.gain.linearRampToValueAtTime(0.50, now + 0.003);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
 
   osc.connect(gain);
   gain.connect(ctx.destination);
 
   osc.start(now);
-  osc.stop(now + 0.16);
+  osc.stop(now + 0.19);
 
   // カウント更新
   tapCount++;
@@ -185,13 +195,151 @@ class PointFilter {
   }
 }
 
-// 人差し指4関節（MCP, PIP, DIP, TIP）専用の適応フィルター
-const indexPointFilters = {
-  mcp: new PointFilter(1.5, 0.01),
-  pip: new PointFilter(1.5, 0.01),
-  dip: new PointFilter(1.5, 0.01),
+// 対象指の定義（親指〜小指までの全指）
+export const FINGER_CONFIGS = {
+  THUMB: {
+    key: "THUMB",
+    label: "親指 (THUMB)",
+    freq: 523.25, // C5
+    baseIdx: 2,   // MCP (付け根)
+    p1Idx: 1,     // CMC
+    p2Idx: 2,     // MCP
+    p3Idx: 3,     // IP
+    tipIdx: 4,    // TIP
+    indices: [1, 2, 3, 4]
+  },
+  INDEX: {
+    key: "INDEX",
+    label: "人差し指 (INDEX)",
+    freq: 587.33, // D5
+    baseIdx: 5,   // MCP
+    p1Idx: 5,     // MCP
+    p2Idx: 6,     // PIP
+    p3Idx: 7,     // DIP
+    tipIdx: 8,    // TIP
+    indices: [5, 6, 7, 8]
+  },
+  MIDDLE: {
+    key: "MIDDLE",
+    label: "中指 (MIDDLE)",
+    freq: 659.25, // E5
+    baseIdx: 9,   // MCP
+    p1Idx: 9,     // MCP
+    p2Idx: 10,    // PIP
+    p3Idx: 11,    // DIP
+    tipIdx: 12,   // TIP
+    indices: [9, 10, 11, 12]
+  },
+  RING: {
+    key: "RING",
+    label: "薬指 (RING)",
+    freq: 783.99, // G5
+    baseIdx: 13,  // MCP
+    p1Idx: 13,    // MCP
+    p2Idx: 14,    // PIP
+    p3Idx: 15,    // DIP
+    tipIdx: 16,   // TIP
+    indices: [13, 14, 15, 16]
+  },
+  PINKY: {
+    key: "PINKY",
+    label: "小指 (PINKY)",
+    freq: 1046.50, // C6
+    baseIdx: 17,  // MCP
+    p1Idx: 17,    // MCP
+    p2Idx: 18,    // PIP
+    p3Idx: 19,    // DIP
+    tipIdx: 20,   // TIP
+    indices: [17, 18, 19, 20]
+  }
+};
+
+// 親指から順番に2回ずつ自動選択されるシーケンス定義（親指→人差し指→中指→薬指→小指）
+export const FINGER_SEQUENCE = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
+export const TAPS_PER_FINGER = 2;
+
+export let currentSeqIndex = 0;
+export let currentFingerTaps = 0;
+export let currentFingerKey = FINGER_SEQUENCE[0]; // 初期: "THUMB"
+
+// 選択中の指4点専用の適応フィルター
+const targetPointFilters = {
+  p1: new PointFilter(1.5, 0.01),
+  p2: new PointFilter(1.5, 0.01),
+  p3: new PointFilter(1.5, 0.01),
   tip: new PointFilter(1.5, 0.01)
 };
+
+// 指ごとの学習閾値モデル
+export const fingerThresholdModels = {
+  THUMB: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  MIDDLE: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  RING: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  PINKY: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  INDEX: { hitRy: 0.80, liftRy: 0.55, samples: 0 }
+};
+
+// 指ごとのデータセット格納用
+export const fingerDatasets = {
+  THUMB: [],
+  MIDDLE: [],
+  RING: [],
+  PINKY: [],
+  INDEX: []
+};
+
+/**
+ * ターゲット指の変更と個別閾値の適用
+ * @param {string} fingerKey
+ */
+export function setTargetFinger(fingerKey) {
+  if (!FINGER_CONFIGS[fingerKey]) return;
+  currentFingerKey = fingerKey;
+  targetPointFilters.p1.reset();
+  targetPointFilters.p2.reset();
+  targetPointFilters.p3.reset();
+  targetPointFilters.tip.reset();
+
+  // 指別学習モデルの閾値を適用
+  applyFingerThreshold(fingerKey);
+
+  // HUD表示更新
+  if (targetFingerVal) {
+    targetFingerVal.textContent = fingerKey;
+    targetFingerVal.classList.add("spike-highlight");
+    setTimeout(() => {
+      if (targetFingerVal) targetFingerVal.classList.remove("spike-highlight");
+    }, 200);
+  }
+  updateTapProgressHud();
+
+  console.log(`[FINGER SEQ] ターゲット指を変更: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
+}
+
+/**
+ * 指別打鍵進捗HUDの更新
+ */
+export function updateTapProgressHud() {
+  if (targetTapProgress) {
+    targetTapProgress.textContent = `${currentFingerTaps} / ${TAPS_PER_FINGER}`;
+  }
+}
+
+/**
+ * 指定指の学習済み閾値をアクティブ閾値にセット
+ * @param {string} fingerKey
+ */
+export function applyFingerThreshold(fingerKey) {
+  const model = fingerThresholdModels[fingerKey];
+  if (model) {
+    hitRyThreshold = model.hitRy;
+    liftRyThreshold = model.liftRy;
+    trainedHitSamples = model.samples;
+  }
+  if (thVal) {
+    thVal.textContent = hitRyThreshold.toFixed(2);
+  }
+}
 
 // 手の骨格コネクション定義（全21ランドマーク間の接続）
 const HAND_CONNECTIONS = [
@@ -199,7 +347,7 @@ const HAND_CONNECTIONS = [
   [0, 1], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17],
   // 親指
   [1, 2], [2, 3], [3, 4],
-  // 人差し指
+  // 人差し指（背景薄表示）
   [5, 6], [6, 7], [7, 8],
   // 中指
   [9, 10], [10, 11], [11, 12],
@@ -208,14 +356,6 @@ const HAND_CONNECTIONS = [
   // 小指
   [17, 18], [18, 19], [19, 20]
 ];
-
-// 人差し指のランドマークインデックス (5: MCP, 6: PIP, 7: DIP, 8: TIP)
-const INDEX_LANDMARK_INDICES = [5, 6, 7, 8];
-
-// 人差し指以外の骨格接続（背景薄表示用）
-const OTHER_CONNECTIONS = HAND_CONNECTIONS.filter(
-  ([s, e]) => !(INDEX_LANDMARK_INDICES.includes(s) && INDEX_LANDMARK_INDICES.includes(e))
-);
 
 /**
  * CSVステータス表示の更新
@@ -233,7 +373,14 @@ function updateCsvStatus(msg) {
  * @param {string} text CSVテキスト
  * @returns {Array<{ timestamp: number, ry: number, isHit: boolean }>}
  */
-export function parseCsv(text) {
+/**
+ * CSVテキストをパースして相対変位ryおよび打鍵フラグを抽出
+ * （打鍵ラベルが未付与のtapファイルの場合、変位ピークを自動検出して打鍵点として認識）
+ * @param {string} text CSVテキスト
+ * @param {string} filename ファイル名
+ * @returns {Array<{ timestamp: number, ry: number, isHit: boolean }>}
+ */
+export function parseCsv(text, filename = "") {
   if (!text || typeof text !== "string") return [];
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
@@ -242,15 +389,14 @@ export function parseCsv(text) {
   const headers = headerLine.split(",").map((h) => h.trim());
 
   const ryIdx = headers.indexOf("ry");
-  const labelIdx = headers.indexOf("label");
-  const timeIdx = headers.indexOf("timestamp") !== -1 ? headers.indexOf("timestamp") : headers.indexOf("timestamp_ms");
+  const labelIdx = headers.indexOf("label") !== -1 ? headers.indexOf("label") : headers.indexOf("is_hit");
+  const timeIdx = headers.indexOf("timestamp") !== -1 ? headers.indexOf("timestamp") : (headers.indexOf("timestamp_ms") !== -1 ? headers.indexOf("timestamp_ms") : headers.indexOf("time_sec"));
 
-  const mcpYIdx = headers.indexOf("index_mcp_y");
-  const tipYIdx = headers.indexOf("index_tip_y");
-  const mcpXIdx = headers.indexOf("index_mcp_x");
-  const tipXIdx = headers.indexOf("index_tip_x");
+  const mcpYIdx = headers.indexOf("index_mcp_y") !== -1 ? headers.indexOf("index_mcp_y") : headers.indexOf("mcp_y");
+  const tipYIdx = headers.indexOf("index_tip_y") !== -1 ? headers.indexOf("index_tip_y") : headers.indexOf("tip_y");
 
   const results = [];
+  let manualHitCount = 0;
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -267,13 +413,12 @@ export function parseCsv(text) {
 
     if (labelIdx !== -1 && cols[labelIdx]) {
       isHit = parseInt(cols[labelIdx], 10) === 1;
+      if (isHit) manualHitCount++;
     }
 
-    if (ryIdx !== -1 && cols[ryIdx] !== undefined) {
-      // timestamp,rx,ry,rz... 形式
+    if (ryIdx !== -1 && cols[ryIdx] !== undefined && cols[ryIdx] !== "") {
       ry = parseFloat(cols[ryIdx]);
     } else if (mcpYIdx !== -1 && tipYIdx !== -1 && cols[mcpYIdx] && cols[tipYIdx]) {
-      // 関節座標形式: ry = (tip.y - mcp.y)
       const my = parseFloat(cols[mcpYIdx]);
       const ty = parseFloat(cols[tipYIdx]);
       if (!isNaN(my) && !isNaN(ty)) {
@@ -290,8 +435,151 @@ export function parseCsv(text) {
     }
   }
 
+  // もしファイル名に "tap" が含まれており、手動打鍵マークが0件の場合は自動ピーク検出を実行
+  if (filename.toLowerCase().includes("tap") && manualHitCount === 0 && results.length > 10) {
+    autoDetectTapPeaks(results);
+  }
+
   return results;
 }
+
+/**
+ * 打鍵データ波形から机面接触ピーク（極大点）を自動検出して isHit を付与
+ * @param {Array<{ timestamp: number, ry: number, isHit: boolean }>} frames
+ */
+function autoDetectTapPeaks(frames) {
+  const rys = frames.map((f) => f.ry);
+  const len = rys.length;
+  if (len < 5) return;
+
+  // 全体の平均値と中央値を算出
+  const sortedRys = [...rys].sort((a, b) => a - b);
+  const medianRy = sortedRys[Math.floor(len * 0.5)];
+  const p75Ry = sortedRys[Math.floor(len * 0.75)];
+
+  let lastHitIdx = -100;
+  let autoCount = 0;
+
+  for (let i = 3; i < len - 3; i++) {
+    const cur = rys[i];
+    // 局所極大（前後より高く、かつ75%タイル以上の山）
+    if (
+      cur > rys[i - 1] &&
+      cur >= rys[i + 1] &&
+      cur > rys[i - 2] &&
+      cur >= rys[i + 2] &&
+      cur > p75Ry &&
+      (cur - medianRy) > 0.08 &&
+      (i - lastHitIdx) > 10 // クールダウン（最低10フレーム離れている）
+    ) {
+      frames[i].isHit = true;
+      lastHitIdx = i;
+      autoCount++;
+    }
+  }
+
+  console.log(`[CSV PEAK] 打鍵ピーク自動検出: ${autoCount} 箇所の打鍵点を抽出 (Median=${medianRy.toFixed(2)}, P75=${p75Ry.toFixed(2)})`);
+}
+
+/**
+ * 読み込んだ学習済みCSVデータから各指の打鍵判定閾値を自動導出
+ */
+function trainModelFromCsv() {
+  const fingerKeys = ["THUMB", "MIDDLE", "RING", "PINKY", "INDEX"];
+  for (const fKey of fingerKeys) {
+    trainModelForFinger(fKey);
+  }
+  // 現在選択されている指の閾値を反映
+  applyFingerThreshold(currentFingerKey);
+}
+
+/**
+ * 特定指のデータセットから打鍵閾値を導出（負値変位・各指の可動域に完全対応）
+ * @param {string} fingerKey
+ */
+function trainModelForFinger(fingerKey) {
+  const datasets = fingerDatasets[fingerKey] || [];
+  if (datasets.length === 0) return;
+
+  const frames = datasets.flatMap((d) => d.frames);
+  if (frames.length === 0) return;
+
+  // 1. 打鍵データ（isHit = true）の抽出
+  const hitRys = frames
+    .filter((f) => f.isHit && f.ry !== null && !isNaN(f.ry))
+    .map((f) => f.ry)
+    .sort((a, b) => a - b);
+
+  // 2. 空中動作データ（純粋な空中浮遊データ neg_air のみを使用）
+  // ※ neg_idle (静止待機) や neg_slide (スライド) は机面接触を含むため空中基準から除外
+  const airDatasets = datasets.filter((d) => {
+    const fn = d.filename.toLowerCase();
+    return fn.includes("neg_air");
+  });
+
+  let maxAirRy = -Infinity;
+  if (airDatasets.length > 0) {
+    const airFrames = airDatasets.flatMap((d) => d.frames);
+    const validAirRys = airFrames
+      .filter((f) => f.ry !== null && !isNaN(f.ry))
+      .map((f) => f.ry)
+      .sort((a, b) => a - b);
+    if (validAirRys.length > 0) {
+      // 90パーセンタイルを空中最大変位として採用（異常外れ値をカット）
+      maxAirRy = validAirRys[Math.floor(validAirRys.length * 0.90)];
+    }
+  }
+
+  // 空中データが無い場合は打鍵以外のデータの下位70%を参照
+  if (maxAirRy === -Infinity) {
+    const negRys = frames
+      .filter((f) => !f.isHit && f.ry !== null && !isNaN(f.ry))
+      .map((f) => f.ry)
+      .sort((a, b) => a - b);
+    maxAirRy = negRys.length > 0 ? negRys[Math.floor(negRys.length * 0.70)] : 0.0;
+  }
+
+  const samples = hitRys.length;
+  let hitTh = 0.0;
+  let liftTh = 0.0;
+
+  if (samples > 0) {
+    // 打鍵サンプルの中央値・第25%パーセンタイル値
+    const medianHitRy = hitRys[Math.floor(samples * 0.50)];
+    const p25HitRy = hitRys[Math.floor(samples * 0.25)];
+
+    if (medianHitRy > maxAirRy) {
+      // 空中最大と打鍵中央値の中間点に打鍵閾値を設定
+      // 薬指（RING）は可動域が狭いため打鍵マージンをやや緩和（0.38）して叩きやすくする
+      const hitRatio = fingerKey === "RING" ? 0.38 : 0.45;
+      hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
+
+      // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
+      // ヒステリシス幅を極小（0.03）に設定
+      const hysteresis = 0.03;
+      liftTh = hitTh - hysteresis;
+    } else {
+      // 外れ値等で打鍵中央値が空中を下回る場合の適応フォールバック
+      hitTh = p25HitRy;
+      liftTh = hitTh - 0.03;
+    }
+  } else {
+    // 打鍵サンプルが0件の場合の安全マージン
+    hitTh = maxAirRy + 0.18;
+    liftTh = hitTh - 0.03;
+  }
+
+  fingerThresholdModels[fingerKey] = {
+    hitRy: parseFloat(hitTh.toFixed(2)),
+    liftRy: parseFloat(liftTh.toFixed(2)),
+    samples
+  };
+
+  console.log(
+    `[MODEL: ${fingerKey}] 学習完了: 打鍵=${samples}件 (空中Max=${maxAirRy.toFixed(3)}) -> 打鍵TH=${hitTh.toFixed(2)}, リフトTH=${liftTh.toFixed(2)}`
+  );
+}
+
 
 /**
  * 複数CSVテキストを一括パースしてデータセット配列に格納
@@ -299,9 +587,8 @@ export function parseCsv(text) {
  */
 function ingestCsvFiles(files) {
   for (const file of files) {
-    const parsed = parseCsv(file.content);
+    const parsed = parseCsv(file.content, file.name);
     if (parsed.length > 0) {
-      // 既存の同名ファイルがあれば差し替え、なければ追加
       const existIdx = testDataDatasets.findIndex((d) => d.filename === file.name);
       const datasetEntry = {
         filename: file.name,
@@ -325,8 +612,7 @@ function ingestCsvFiles(files) {
     trainModelFromCsv();
     updateCsvStatus(`LOADED (${testDataDatasets.length} files, ${totalHits} hits)`);
     console.log(
-      `[CSV] 全読込成功: 計 ${testDataDatasets.length} ファイル, ${testDataFrames.length} フレーム (打鍵マーク: ${totalHits})`,
-      testDataDatasets.map((d) => `${d.filename} (${d.frames.length}f)`)
+      `[CSV] 全読込成功: 計 ${testDataDatasets.length} ファイル, ${testDataFrames.length} フレーム (打鍵マーク: ${totalHits})`
     );
   } else {
     updateCsvStatus("NOT LOADED");
@@ -335,90 +621,67 @@ function ingestCsvFiles(files) {
 }
 
 /**
- * 読み込んだ学習済みCSVデータから打鍵判定閾値を自動導出
- * （空中動作などの非打鍵データの上限値を確実に超える安全マージンを設定）
+ * ファイルパスまたはファイル名から指キー（THUMB, MIDDLE, RING, PINKY, INDEX）を判定
+ * @param {string} path
+ * @returns {string}
  */
-function trainModelFromCsv() {
-  // 1. 全フレームから label: 1 (打鍵) の ry 値を抽出
-  const hitRyValues = testDataFrames
-    .filter((f) => f.isHit && f.ry !== null && !isNaN(f.ry))
-    .map((f) => f.ry)
-    .sort((a, b) => a - b);
-
-  // 2. 空中動作データ (index_neg_air) または非打鍵フレーム (label === 0) の最大 ry 値を探索
-  const airDataset = testDataDatasets.find((d) => d.filename.toLowerCase().includes("neg_air"));
-  let maxAirRy = -Infinity;
-  if (airDataset) {
-    for (const f of airDataset.frames) {
-      if (f.ry !== null && !isNaN(f.ry)) {
-        if (f.ry > maxAirRy) maxAirRy = f.ry;
-      }
-    }
-  }
-
-  // 空中データファイルが明示的にない場合は全非打鍵データの上位90%点を参考
-  if (maxAirRy === -Infinity) {
-    const negRys = testDataFrames
-      .filter((f) => !f.isHit && f.ry !== null && !isNaN(f.ry))
-      .map((f) => f.ry)
-      .sort((a, b) => a - b);
-    if (negRys.length > 0) {
-      maxAirRy = negRys[Math.floor(negRys.length * 0.90)];
-    } else {
-      maxAirRy = 0.72; // デフォルト空中最大変位
-    }
-  }
-
-  trainedHitSamples = hitRyValues.length;
-
-  if (trainedHitSamples > 0) {
-    // 打鍵サンプルの中央値（p50）および下位25%点（p25）
-    const p25 = hitRyValues[Math.floor(trainedHitSamples * 0.25)];
-    const p50 = hitRyValues[Math.floor(trainedHitSamples * 0.50)];
-
-    // 空中最大変位（約0.714）に安全マージン（+0.08）を加えた値と、打鍵サンプルの適正範囲から閾値を算出
-    // （空中誤検知を確実に遮断するため最低でも0.80以上に設定）
-    const airSafeTh = maxAirRy + 0.08;
-    hitRyThreshold = Math.max(0.80, Math.min(p50, Math.max(airSafeTh, p25)));
-
-    // リフト復帰閾値（指を打鍵位置からしっかり持ち上げるまで再打鍵を遮断）
-    liftRyThreshold = Math.min(hitRyThreshold * 0.68, maxAirRy * 0.85);
-
-    console.log(
-      `[MODEL] 学習完了: 打鍵サンプル ${trainedHitSamples} 件 (空中Max=${maxAirRy.toFixed(3)}) -> 打鍵TH=${hitRyThreshold.toFixed(2)}, リフトTH=${liftRyThreshold.toFixed(2)}`
-    );
-  } else {
-    hitRyThreshold = 0.82;
-    liftRyThreshold = 0.55;
-  }
-
-  if (thVal) {
-    thVal.textContent = hitRyThreshold.toFixed(2);
-  }
+export function detectFingerKey(path) {
+  const p = path.toLowerCase();
+  if (p.includes("thumb")) return "THUMB";
+  if (p.includes("middle")) return "MIDDLE";
+  if (p.includes("ring")) return "RING";
+  if (p.includes("pinky")) return "PINKY";
+  if (p.includes("index")) return "INDEX";
+  return "THUMB";
 }
 
 /**
- * public/dataset/ 配下のCSVデータセットを自動非同期フェッチして読み込む
+ * public/dataset/ 配下の各指CSVデータセットを自動非同期フェッチして読み込む
  */
 export async function loadTestDataCsv() {
   const loadedFiles = [];
 
-  // 1. public/dataset/manifest.json からファイル一覧を取得して非同期fetch
+  // 初期化
+  Object.keys(fingerDatasets).forEach((k) => (fingerDatasets[k] = []));
+
   try {
     const manifestRes = await fetch("./dataset/manifest.json");
     if (manifestRes.ok) {
-      const fileList = await manifestRes.json();
-      if (Array.isArray(fileList)) {
-        for (const fname of fileList) {
-          try {
-            const csvRes = await fetch(`./dataset/${fname}`);
-            if (csvRes.ok) {
-              const text = await csvRes.text();
-              loadedFiles.push({ name: fname, content: text });
+      const manifestData = await manifestRes.json();
+      let fileList = [];
+      if (Array.isArray(manifestData)) {
+        fileList = manifestData;
+      } else if (manifestData && typeof manifestData === "object") {
+        if (manifestData.fingers) {
+          fileList = Object.values(manifestData.fingers).flat();
+        } else if (Array.isArray(manifestData.files)) {
+          fileList = manifestData.files;
+        }
+      }
+
+      for (const fname of fileList) {
+        if (!fname) continue;
+        try {
+          const csvRes = await fetch(`./dataset/${fname}`);
+          if (csvRes.ok) {
+            const text = await csvRes.text();
+            const displayName = fname.includes("/") ? fname.split("/").pop() : fname;
+            const fingerKey = detectFingerKey(fname);
+            const parsed = parseCsv(text, displayName);
+            if (parsed.length > 0) {
+              const entry = {
+                filename: displayName,
+                path: fname,
+                fingerKey,
+                frames: parsed,
+                hitCount: parsed.filter((f) => f.isHit).length
+              };
+              fingerDatasets[fingerKey].push(entry);
+              loadedFiles.push({ name: displayName, content: text });
             }
-          } catch (err) {
-            console.warn(`[CSV] ${fname} の取得スキップ:`, err);
           }
+        } catch (err) {
+          console.warn(`[CSV] ${fname} の取得スキップ:`, err);
         }
       }
     }
@@ -426,12 +689,12 @@ export async function loadTestDataCsv() {
     console.warn("[CSV] manifest.json の読み込みをスキップ:", err);
   }
 
-  // 取得できたCSVファイル群をデータセットへ登録
   if (loadedFiles.length > 0) {
     ingestCsvFiles(loadedFiles);
+    trainModelFromCsv();
   } else {
     updateCsvStatus("NO CSV DATA");
-    if (thVal) thVal.textContent = hitRyThreshold.toFixed(2);
+    applyFingerThreshold(currentFingerKey);
   }
 }
 
@@ -552,72 +815,57 @@ function getCompatibleUserMedia(constraints) {
 async function startFrontCamera() {
   let stream = null;
 
-  // 60fpsを最優先で要求（720pおよび480p/360pでの60fpsモードを優先探索）
+  // 16:9の自然な画角比率を維持しつつ、60fps出力（720p / 540p / 360p）を優先探索
   const tryConstraints = [
-    // 1. 720p + 60fps厳格指定 (min: 55 または exact: 60)
+    // 1. 720p (1280x720, 16:9) 60fps
     {
       video: {
         facingMode: "user",
-        width: { ideal: 1280, max: 1280 },
-        height: { ideal: 720, max: 720 },
-        frameRate: { ideal: 60, min: 55 }
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 16 / 9 },
+        frameRate: { ideal: 60, min: 45 }
       },
       audio: false
     },
-    {
-      video: {
-        facingMode: { ideal: "user" },
-        width: { ideal: 1280, max: 1280 },
-        height: { ideal: 720, max: 720 },
-        frameRate: { exact: 60 }
-      },
-      audio: false
-    },
-    // 2. 480p + 60fps（720pで60fps非対応のカメラでも480pなら60fpsを出せる機種向け）
+    // 2. 540p (960x540, 16:9) 60fps
     {
       video: {
         facingMode: "user",
-        width: { ideal: 640, max: 640 },
-        height: { ideal: 480, max: 480 },
-        frameRate: { ideal: 60, min: 55 }
+        width: { ideal: 960 },
+        height: { ideal: 540 },
+        aspectRatio: { ideal: 16 / 9 },
+        frameRate: { ideal: 60, min: 45 }
       },
       audio: false
     },
-    {
-      video: {
-        facingMode: { ideal: "user" },
-        width: { ideal: 640, max: 640 },
-        height: { ideal: 480, max: 480 },
-        frameRate: { exact: 60 }
-      },
-      audio: false
-    },
-    // 3. 360p + 60fps
+    // 3. 360p (640x360, 16:9) 60fps
     {
       video: {
         facingMode: "user",
-        width: { ideal: 640, max: 640 },
-        height: { ideal: 360, max: 360 },
-        frameRate: { ideal: 60, min: 50 }
+        width: { ideal: 640 },
+        height: { ideal: 360 },
+        aspectRatio: { ideal: 16 / 9 },
+        frameRate: { ideal: 60, min: 45 }
       },
       audio: false
     },
-    // 4. 任意解像度（最大720p）+ 60fps
-    {
-      video: {
-        facingMode: { ideal: "user" },
-        width: { max: 1280 },
-        height: { max: 720 },
-        frameRate: { ideal: 60, min: 50 }
-      },
-      audio: false
-    },
-    // 5. フォールバック
+    // 4. 720p (1280x720, 16:9) 任意fps
     {
       video: {
         facingMode: "user",
-        width: { ideal: 1280, max: 1280 },
-        height: { ideal: 720, max: 720 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 16 / 9 },
+        frameRate: { ideal: 60 }
+      },
+      audio: false
+    },
+    // 5. 16:9 比率優先（解像度任意）
+    {
+      video: {
+        facingMode: "user",
+        aspectRatio: { ideal: 16 / 9 },
         frameRate: { ideal: 60 }
       },
       audio: false
@@ -644,39 +892,27 @@ async function startFrontCamera() {
   currentStream = stream;
   video.srcObject = currentStream;
 
-  // ハードウェアがサポートする最大フレームレート（最大60fps）を強制適用
+  // ハードウェアがサポートする最大フレームレートを強制適用
   const track = stream.getVideoTracks()[0];
   if (track) {
     if (typeof track.getCapabilities === "function") {
       const caps = track.getCapabilities();
-      if (caps.frameRate && caps.frameRate.max >= 50) {
-        try {
-          const targetFps = Math.min(60, caps.frameRate.max);
-          await track.applyConstraints({
-            frameRate: { ideal: targetFps, min: Math.min(55, targetFps) }
-          });
-        } catch (fpsErr) {
-          console.warn("最大fps制約の適用スキップ:", fpsErr);
-        }
+      console.log("[CAM CAPABILITIES]", caps);
+      const targetFps = (caps.frameRate && caps.frameRate.max) ? Math.min(60, caps.frameRate.max) : 60;
+      try {
+        await track.applyConstraints({
+          frameRate: { ideal: targetFps }
+        });
+      } catch (err) {
+        console.warn("FPS制約適用スキップ:", err);
       }
     }
 
-    // 実効カメラ設定（解像度・fps）をHUDに反映（720p超過時は上限適用を試行）
+    // 実効カメラ設定（解像度・fps）をHUDに反映
     if (typeof track.getSettings === "function") {
-      let settings = track.getSettings();
-      if (settings.height && settings.height > 720) {
-        try {
-          await track.applyConstraints({
-            width: { ideal: 1280, max: 1280 },
-            height: { ideal: 720, max: 720 }
-          });
-          settings = track.getSettings();
-        } catch (err) {
-          console.warn("720p上限の追加適用をスキップ:", err);
-        }
-      }
-      const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "REQ 60fps";
-      const resLabel = settings.height ? `${settings.height}p` : "";
+      const settings = track.getSettings();
+      const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "60fps";
+      const resLabel = settings.height ? `${settings.height}p` : "-";
       camInfo.textContent = `FRONT (${resLabel} ${fpsLabel})`.trim();
     }
   }
@@ -760,6 +996,9 @@ function schedulePredictLoop() {
 function drawRawHandLandmarks(results) {
   canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
+  const fingerConfig = FINGER_CONFIGS[currentFingerKey] || FINGER_CONFIGS.THUMB;
+  const targetIndices = fingerConfig.indices;
+
   if (!results || !results.landmarks || results.landmarks.length === 0) {
     handsCount.textContent = "0";
     if (tapState !== "IDLE") {
@@ -767,10 +1006,10 @@ function drawRawHandLandmarks(results) {
       updateStateHud("IDLE", false);
     }
     // 手ロスト時にフィルターをリセット（再検出時の座標ジャンプ防止）
-    indexPointFilters.mcp.reset();
-    indexPointFilters.pip.reset();
-    indexPointFilters.dip.reset();
-    indexPointFilters.tip.reset();
+    targetPointFilters.p1.reset();
+    targetPointFilters.p2.reset();
+    targetPointFilters.p3.reset();
+    targetPointFilters.tip.reset();
     resetDebugMetrics();
     return;
   }
@@ -780,16 +1019,20 @@ function drawRawHandLandmarks(results) {
   const width = canvas.width;
   const height = canvas.height;
 
-  // メインの手（先頭の手）を対象に人差し指を描画
+  // メインの手（先頭の手）
   const landmarks = results.landmarks[0];
 
-  // 1. 他の指・手のひら（非常に薄いグレースケールで描画）
+  // 1. 対象指以外の骨格（人差し指を含むすべて）を薄いグレースケールで描画
+  const otherConnections = HAND_CONNECTIONS.filter(
+    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
+  );
+
   canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
   canvasCtx.lineWidth = 1;
   canvasCtx.lineCap = "round";
   canvasCtx.lineJoin = "round";
 
-  OTHER_CONNECTIONS.forEach(([startIdx, endIdx]) => {
+  otherConnections.forEach(([startIdx, endIdx]) => {
     const p1 = landmarks[startIdx];
     const p2 = landmarks[endIdx];
 
@@ -799,9 +1042,9 @@ function drawRawHandLandmarks(results) {
     canvasCtx.stroke();
   });
 
-  // 人差し指以外の関節点（極小薄グレー）
+  // 対象指以外の関節点（人差し指を含む・極小薄グレー）
   landmarks.forEach((p, idx) => {
-    if (INDEX_LANDMARK_INDICES.includes(idx)) return;
+    if (targetIndices.includes(idx)) return;
     canvasCtx.beginPath();
     canvasCtx.arc(p.x * width, p.y * height, 2, 0, 2 * Math.PI);
     canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
@@ -823,45 +1066,62 @@ function drawRawHandLandmarks(results) {
     }
   }
 
-  // 2. 人差し指ランドマークの生ピクセル座標 (5: MCP, 6: PIP, 7: DIP, 8: TIP)
-  const rawMcp = { x: landmarks[5].x * width, y: landmarks[5].y * height };
-  const rawPip = { x: landmarks[6].x * width, y: landmarks[6].y * height };
-  const rawDip = { x: landmarks[7].x * width, y: landmarks[7].y * height };
-  const rawTip = { x: landmarks[8].x * width, y: landmarks[8].y * height };
+  // 2. 選択中指ランドマークの生ピクセル座標
+  const rawP1 = { x: landmarks[fingerConfig.p1Idx].x * width, y: landmarks[fingerConfig.p1Idx].y * height };
+  const rawP2 = { x: landmarks[fingerConfig.p2Idx].x * width, y: landmarks[fingerConfig.p2Idx].y * height };
+  const rawP3 = { x: landmarks[fingerConfig.p3Idx].x * width, y: landmarks[fingerConfig.p3Idx].y * height };
+  const rawTip = { x: landmarks[fingerConfig.tipIdx].x * width, y: landmarks[fingerConfig.tipIdx].y * height };
 
   // 1 Euro Filterによる適応平滑化（静止時はジッター完全除去、打鍵時は遅延ゼロ追従）
   const now = performance.now();
-  const smoothMcp = indexPointFilters.mcp.filter(rawMcp.x, rawMcp.y, now);
-  const smoothPip = indexPointFilters.pip.filter(rawPip.x, rawPip.y, now);
-  const smoothDip = indexPointFilters.dip.filter(rawDip.x, rawDip.y, now);
-  const smoothTip = indexPointFilters.tip.filter(rawTip.x, rawTip.y, now);
+  const smoothP1 = targetPointFilters.p1.filter(rawP1.x, rawP1.y, now);
+  const smoothP2 = targetPointFilters.p2.filter(rawP2.x, rawP2.y, now);
+  const smoothP3 = targetPointFilters.p3.filter(rawP3.x, rawP3.y, now);
+  const smoothTip = targetPointFilters.tip.filter(rawTip.x, rawTip.y, now);
 
   // 最新平滑化座標の保持
   currentTip.x = smoothTip.x;
   currentTip.y = smoothTip.y;
 
-  // 手首（Landmark 0: Wrist）と人差し指付け根（Landmark 5: MCP）間の3D距離 L（手の基準長）
-  const dx05 = landmarks[5].x - landmarks[0].x;
-  const dy05 = landmarks[5].y - landmarks[0].y;
-  const dz05 = (landmarks[5].z ?? 0) - (landmarks[0].z ?? 0);
-  const L = Math.hypot(dx05, dy05, dz05) || 0.001;
+  // 手首（Landmark 0: Wrist）と対象指の付け根（baseIdx）間の3D距離 L（手の基準長）
+  const baseLm = landmarks[fingerConfig.baseIdx];
+  const dx0base = baseLm.x - landmarks[0].x;
+  const dy0base = baseLm.y - landmarks[0].y;
+  const dz0base = (baseLm.z ?? 0) - (landmarks[0].z ?? 0);
+  const L = Math.hypot(dx0base, dy0base, dz0base) || 0.001;
 
-  // 平滑化座標に基づく安定した相対変位 ry（ジッターによる微小スパイクを排除）
-  const currentRy = (smoothTip.y - smoothMcp.y) / (height * L);
-  const rawRy = (landmarks[8].y - landmarks[5].y) / L;
+  // 対象指の基準点ピクセル座標（smoothP2 または smoothP1）
+  const smoothBase = (fingerConfig.baseIdx === fingerConfig.p1Idx) ? smoothP1 : smoothP2;
+
+  // 平滑化座標に基づく安定した相対変位 ry
+  const currentRy = (smoothTip.y - smoothBase.y) / (height * L);
+  const rawRy = (landmarks[fingerConfig.tipIdx].y - baseLm.y) / L;
 
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
   if (tapState === "IDLE") {
-    // 平滑化変位と生変位の両方が安全閾値以上の場合のみ打鍵判定
-    if (currentRy >= hitRyThreshold && rawRy >= hitRyThreshold * 0.95) {
+    // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
+    if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
-      playTapSound(523.25); // C5打鍵音
+      playTapSound(fingerConfig.freq || 523.25); // 指ごとの音階で発音
       updateStateHud("TOUCHED", true);
-      console.log(`[REALTIME TAP] #${tapCount} ry=${currentRy.toFixed(3)} (Raw=${rawRy.toFixed(3)}) >= TH:${hitRyThreshold.toFixed(2)}`);
+
+      // 親指から順に2回ずつ自動カウント
+      currentFingerTaps++;
+      console.log(`[REALTIME TAP] #${tapCount} [${currentFingerKey}] (${currentFingerTaps}/${TAPS_PER_FINGER}) ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`);
+
+      if (currentFingerTaps >= TAPS_PER_FINGER) {
+        // 2回打鍵完了！次の指へ自動遷移
+        currentFingerTaps = 0;
+        currentSeqIndex = (currentSeqIndex + 1) % FINGER_SEQUENCE.length;
+        const nextFinger = FINGER_SEQUENCE[currentSeqIndex];
+        setTargetFinger(nextFinger);
+      } else {
+        updateTapProgressHud();
+      }
     }
   } else if (tapState === "TOUCHED") {
-    if (currentRy < liftRyThreshold) {
-      // 指の持ち上がり（リフト）を検知して待機状態に復帰
+    // 指のリフト復帰（閾値を下回ったら待機状態へ）
+    if (currentRy <= liftRyThreshold) {
       tapState = "IDLE";
       updateStateHud("IDLE", false);
     }
@@ -870,71 +1130,52 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 人差し指の骨格描画（ブレのない平滑化ライン）
-  canvasCtx.strokeStyle = "#ffffff";
-  canvasCtx.lineWidth = 3;
+  // 5. 対象指の骨格描画（控えめで繊細な平滑化ライン）
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  canvasCtx.lineWidth = 1.5;
   canvasCtx.lineCap = "round";
   canvasCtx.lineJoin = "round";
 
   canvasCtx.beginPath();
-  canvasCtx.moveTo(smoothMcp.x, smoothMcp.y);
-  canvasCtx.lineTo(smoothPip.x, smoothPip.y);
-  canvasCtx.lineTo(smoothDip.x, smoothDip.y);
+  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
   canvasCtx.lineTo(smoothTip.x, smoothTip.y);
   canvasCtx.stroke();
 
-  // 人差し指関節点（5: MCP, 6: PIP, 7: DIP）の描画（白丸＋黒枠）
-  [smoothMcp, smoothPip, smoothDip].forEach((pt) => {
+  // 対象指関節点（P1, P2, P3）の描画（控えめな小丸）
+  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
     canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
+    canvasCtx.arc(pt.x, pt.y, 2.5, 0, 2 * Math.PI);
     canvasCtx.fillStyle = "#ffffff";
     canvasCtx.fill();
-    canvasCtx.strokeStyle = "#000000";
-    canvasCtx.lineWidth = 1.5;
+    canvasCtx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    canvasCtx.lineWidth = 0.8;
     canvasCtx.stroke();
   });
 
-  // 6. 人差し指先端（TIP: Landmark 8）の白ターゲット丸マーク描画（ジッターゼロ）
+  // 6. 対象指先端（TIP）の控えめなミニマルマーカー描画
   drawTipTargetMark(smoothTip.x, smoothTip.y);
 }
 
 /**
- * 人差し指先端（TIP）のターゲット丸マーク描画（白黒ミニマル・ダイレクト追従）
+ * 対象指先端（TIP）のミニマルターゲットマーク描画（洗練された極細リング＋中心ドット）
  * @param {number} x
  * @param {number} y
  */
 function drawTipTargetMark(x, y) {
-  // 外側のターゲットサークル
+  // 外側の繊細なサークル（半径5px、極細線）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 9, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = "#ffffff";
-  canvasCtx.lineWidth = 2;
+  canvasCtx.arc(x, y, 5, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  canvasCtx.lineWidth = 1.2;
   canvasCtx.stroke();
 
-  // 十字ターゲットインジケータ
-  canvasCtx.strokeStyle = "#ffffff";
-  canvasCtx.lineWidth = 1.5;
+  // 中心ミニマムドット（半径2px）
   canvasCtx.beginPath();
-  // 水平線
-  canvasCtx.moveTo(x - 13, y);
-  canvasCtx.lineTo(x - 5, y);
-  canvasCtx.moveTo(x + 5, y);
-  canvasCtx.lineTo(x + 13, y);
-  // 垂直線
-  canvasCtx.moveTo(x, y - 13);
-  canvasCtx.lineTo(x, y - 5);
-  canvasCtx.moveTo(x, y + 5);
-  canvasCtx.lineTo(x, y + 13);
-  canvasCtx.stroke();
-
-  // 中心ターゲット丸
-  canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 3.5, 0, 2 * Math.PI);
+  canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
   canvasCtx.fillStyle = "#ffffff";
   canvasCtx.fill();
-  canvasCtx.strokeStyle = "#000000";
-  canvasCtx.lineWidth = 1;
-  canvasCtx.stroke();
 }
 
 /**
@@ -1020,9 +1261,10 @@ window.addEventListener("resize", updateCanvasResolution);
 // DOM読み込み完了時に自動実行
 window.addEventListener("DOMContentLoaded", init);
 
-// ブラウザのAutoplay Policy対応（初回クリックまたはタップでAudioContextをresume）
-window.addEventListener("pointerdown", ensureAudioContext, { once: false });
-window.addEventListener("keydown", ensureAudioContext, { once: false });
+// ブラウザのAutoplay Policy対応（初回クリックまたはタップでAudioContextを確実にresume）
+["pointerdown", "touchstart", "click", "keydown"].forEach((evt) => {
+  window.addEventListener(evt, ensureAudioContext, { once: false, passive: true });
+});
 
 // TEST SOUNDボタン押下時の手動テスト発音
 if (testSoundBtn) {
@@ -1050,4 +1292,7 @@ if (csvFileInput) {
     csvFileInput.value = ""; // 連続選択可能にするためリセット
   });
 }
+
+// 初期ターゲット指（親指 THUMB）の設定
+setTargetFinger("THUMB");
 
