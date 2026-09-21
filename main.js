@@ -327,8 +327,161 @@ export const MARY_LAMB_SEQUENCE = [
   { step: 25, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
 ];
 
-export let currentSongStep = 0; // 現在の進行ステップ (0 〜 24)
-export let currentFingerKey = MARY_LAMB_SEQUENCE[0].fingerKey; // 初期ターゲット指: "MIDDLE" (3: ミ)
+// 「聖者の行進（When the Saints Go Marching In）」運指・音名シーケンス定義（右手基準・全32音）
+// 1:親指(ド), 2:人差し指(レ), 3:中指(ミ), 4:薬指(ファ), 5:小指(ソ)
+export const SAINTS_MARCH_SEQUENCE = [
+  // フレーズ1: ド ミ ファ ソ / ド ミ ファ ソ / ド ミ ファ ソ ミ ド ミ レ (16音)
+  { step: 1,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 5,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 6,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 7,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+  { step: 8,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 10, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 11, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+  { step: 12, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 14, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 15, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 16, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+
+  // フレーズ2: ミ ミ レ ド ド ミ ソ ソ ファ (9音)
+  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 19, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 20, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 21, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 23, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 24, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 25, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+
+  // フレーズ3: ミ ファ ソ ミ ド レ ド (7音)
+  { step: 26, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 27, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+  { step: 28, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 29, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 30, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
+  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 32, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
+];
+
+// 演奏曲リスト
+export const SONGS = {
+  mary: {
+    id: "mary",
+    title: "メリーさんの羊",
+    totalPhrases: 4,
+    sequence: MARY_LAMB_SEQUENCE
+  },
+  saints: {
+    id: "saints",
+    title: "聖者の行進",
+    totalPhrases: 3,
+    sequence: SAINTS_MARCH_SEQUENCE
+  }
+};
+
+export let currentSongId = "mary";
+export let currentSequence = SONGS.mary.sequence;
+export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
+export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指
+
+// 3秒カウントダウン状態管理
+export let isCountingDown = false;
+let countdownTimerId = null;
+
+/**
+ * 3秒カウントダウンの実行（3 → 2 → 1 → START!）
+ * @param {Function} callback カウントダウン完了後のコールバック
+ */
+export function startCountdown(callback) {
+  if (countdownTimerId) {
+    clearInterval(countdownTimerId);
+    countdownTimerId = null;
+  }
+  isCountingDown = true;
+  tapState = "IDLE";
+  updateStateHud("COUNTDOWN", false);
+
+  const overlay = document.getElementById("countdown-overlay");
+  const textEl = document.getElementById("countdown-text");
+  if (!overlay || !textEl) {
+    isCountingDown = false;
+    if (callback) callback();
+    return;
+  }
+
+  overlay.classList.remove("hidden");
+  let count = 3;
+  textEl.textContent = `${count}`;
+  textEl.style.transform = "scale(1.2)";
+  setTimeout(() => {
+    if (textEl) textEl.style.transform = "scale(1.0)";
+  }, 60);
+
+  countdownTimerId = setInterval(() => {
+    count--;
+    if (count > 0) {
+      textEl.textContent = `${count}`;
+      textEl.style.transform = "scale(1.2)";
+      setTimeout(() => {
+        if (textEl) textEl.style.transform = "scale(1.0)";
+      }, 60);
+    } else if (count === 0) {
+      textEl.textContent = "START!";
+      textEl.style.transform = "scale(1.3)";
+      setTimeout(() => {
+        if (textEl) textEl.style.transform = "scale(1.0)";
+      }, 60);
+    } else {
+      clearInterval(countdownTimerId);
+      countdownTimerId = null;
+      overlay.classList.add("hidden");
+      isCountingDown = false;
+      updateStateHud("IDLE", false);
+      if (callback) callback();
+    }
+  }, 1000);
+}
+
+/**
+ * 楽曲の切り替え
+ * @param {string} songId
+ */
+export function selectSong(songId) {
+  if (!SONGS[songId]) return;
+  currentSongId = songId;
+  currentSequence = SONGS[songId].sequence;
+  currentSongStep = 0;
+
+  // メニューのアクティブクラス更新
+  document.querySelectorAll(".song-menu-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.song === songId);
+  });
+
+  // メニューを閉じる
+  const menu = document.getElementById("song-select-menu");
+  if (menu) menu.classList.add("hidden");
+
+  // ガイドUIのタイトルを更新
+  const titleEl = document.querySelector(".song-title");
+  if (titleEl) {
+    titleEl.textContent = SONGS[songId].title;
+  }
+
+  // 1音目のターゲット指をセット＆ガイドUI再描画
+  setTargetFinger(currentSequence[0].fingerKey);
+  renderSongGuideUI();
+
+  // カウントダウン開始
+  startCountdown(() => {
+    console.log(`[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`);
+  });
+}
 
 // 選択中の指4点専用の適応フィルター
 const targetPointFilters = {
@@ -378,14 +531,15 @@ export function setTargetFinger(fingerKey) {
  * メロディ＆運指ガイドUIの更新
  */
 export function renderSongGuideUI() {
-  const currentItem = MARY_LAMB_SEQUENCE[currentSongStep];
+  const currentSong = SONGS[currentSongId] || SONGS.mary;
+  const currentItem = currentSequence[currentSongStep];
   if (!currentItem) return;
 
   if (songPhraseLabel) {
-    songPhraseLabel.textContent = `PHRASE ${currentItem.phrase} / 4`;
+    songPhraseLabel.textContent = `PHRASE ${currentItem.phrase} / ${currentSong.totalPhrases}`;
   }
   if (songStepProgress) {
-    songStepProgress.textContent = `${currentItem.step} / ${MARY_LAMB_SEQUENCE.length}`;
+    songStepProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
   }
   if (targetFingerVal) {
     targetFingerVal.textContent = `${currentItem.fingerNum} ${currentItem.note} (${currentItem.fingerKey})`;
@@ -395,18 +549,18 @@ export function renderSongGuideUI() {
     }, 200);
   }
   if (targetTapProgress) {
-    targetTapProgress.textContent = `${currentItem.step} / ${MARY_LAMB_SEQUENCE.length}`;
+    targetTapProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
   }
 
   // 画面上部の音符ストリームUIを描画
   if (songNotesStream) {
-    const total = MARY_LAMB_SEQUENCE.length;
+    const total = currentSequence.length;
     const startIdx = Math.max(0, currentSongStep - 2);
     const endIdx = Math.min(total, currentSongStep + 6);
 
     let html = "";
     for (let i = startIdx; i < endIdx; i++) {
-      const item = MARY_LAMB_SEQUENCE[i];
+      const item = currentSequence[i];
       let statusClass = "";
       if (i < currentSongStep) {
         statusClass = "done";
@@ -432,7 +586,7 @@ export function renderSongGuideUI() {
  * @param {number} stepIndex
  */
 export function getTargetFingerColor(stepIndex) {
-  const current = MARY_LAMB_SEQUENCE[stepIndex];
+  const current = currentSequence[stepIndex];
   if (!current) {
     return {
       stroke: "rgba(0, 229, 255, 0.95)",
@@ -444,13 +598,13 @@ export function getTargetFingerColor(stepIndex) {
 
   // 連続打鍵グループの先頭を探索
   let start = stepIndex;
-  while (start > 0 && MARY_LAMB_SEQUENCE[start - 1].fingerKey === current.fingerKey) {
+  while (start > 0 && currentSequence[start - 1].fingerKey === current.fingerKey) {
     start--;
   }
 
   // 連続打鍵グループの末尾を探索
   let end = stepIndex;
-  while (end < MARY_LAMB_SEQUENCE.length - 1 && MARY_LAMB_SEQUENCE[end + 1].fingerKey === current.fingerKey) {
+  while (end < currentSequence.length - 1 && currentSequence[end + 1].fingerKey === current.fingerKey) {
     end++;
   }
 
@@ -1477,11 +1631,12 @@ function drawRawHandLandmarks(results) {
   const targetColor = getTargetFingerColor(currentSongStep);
 
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
-  if (tapState === "IDLE") {
+  // カウントダウン中（3・2・1）は打鍵認識を一時停止して演奏準備に専念
+  if (tapState === "IDLE" && !isCountingDown) {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
-      const currentTarget = MARY_LAMB_SEQUENCE[currentSongStep];
+      const currentTarget = currentSequence[currentSongStep];
 
       // 正解音階を発音
       playTapSound(currentTarget.freq);
@@ -1491,7 +1646,7 @@ function drawRawHandLandmarks(results) {
       spawnTapEffect(smoothTip.x, smoothTip.y, targetColor);
 
       console.log(
-        `[SONG HIT] Step ${currentTarget.step}/25 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`
+        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`
       );
 
       // 打鍵直前の指先座標を記録
@@ -1499,8 +1654,8 @@ function drawRawHandLandmarks(results) {
       const fromTipY = smoothTip.y;
 
       // 次の音符へステップ進行
-      currentSongStep = (currentSongStep + 1) % MARY_LAMB_SEQUENCE.length;
-      const nextTarget = MARY_LAMB_SEQUENCE[currentSongStep];
+      currentSongStep = (currentSongStep + 1) % currentSequence.length;
+      const nextTarget = currentSequence[currentSongStep];
       const nextColor = getTargetFingerColor(currentSongStep);
 
       // 次の指先座標（最新ランドマークから取得）
@@ -1740,7 +1895,40 @@ if (csvFileInput) {
   });
 }
 
+// 画面右上の丸い楽曲選択ボタンとメニュー
+const songSelectBtn = document.getElementById("song-select-btn");
+const songSelectMenu = document.getElementById("song-select-menu");
+
+if (songSelectBtn && songSelectMenu) {
+  // 丸ボタンタップでメニュー表示/非表示トグル
+  songSelectBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    ensureAudioContext(); // ユーザー操作契機でオーディオ初期化
+    songSelectMenu.classList.toggle("hidden");
+  });
+
+  // メニュー項目タップで曲選択
+  document.querySelectorAll(".song-menu-item").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ensureAudioContext();
+      const songId = item.dataset.song;
+      if (songId) {
+        selectSong(songId);
+      }
+    });
+  });
+
+  // 画面外タップでメニューを閉じる
+  document.addEventListener("click", (e) => {
+    if (!songSelectMenu.classList.contains("hidden") && !songSelectMenu.contains(e.target)) {
+      songSelectMenu.classList.add("hidden");
+    }
+  });
+}
+
 // 初期ターゲット指（メリーさんの羊 第1音: 中指 3 ミ）の設定
-setTargetFinger(MARY_LAMB_SEQUENCE[0].fingerKey);
+setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
+
 

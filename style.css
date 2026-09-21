@@ -257,3 +257,127 @@ html, body {
   color: #333333;
   opacity: 0.4;
 }
+
+/* ==========================================================================
+   楽曲選択ボタン＆ポップアップメニュー（白黒ミニマル・右上配置）
+   ========================================================================== */
+.song-select-container {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  z-index: 200;
+  pointer-events: auto;
+}
+
+/* 右上の丸いボタン（直径38px・白黒シンプル） */
+.song-select-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background-color: rgba(15, 15, 15, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.song-select-btn:hover {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+.song-select-btn:active {
+  transform: scale(0.92);
+}
+
+/* 曲選択メニュー（白黒ミニマルポップアップ） */
+.song-select-menu {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  min-width: 140px;
+  background-color: rgba(15, 15, 15, 0.95);
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 6px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.song-menu-header {
+  font-size: 10px;
+  color: #888888;
+  padding: 4px 8px;
+  border-bottom: 1px solid #262626;
+  margin-bottom: 2px;
+  letter-spacing: 0.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.song-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #cccccc;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: all 0.15s ease;
+}
+
+.song-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.song-menu-item.active {
+  background-color: #ffffff;
+  color: #000000;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   カウントダウンオーバーレイ（3・2・1・START!・白黒シンプル）
+   ========================================================================== */
+.countdown-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 300;
+  pointer-events: none;
+}
+
+.countdown-text {
+  font-size: 76px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 2px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.9), 0 0 32px rgba(255, 255, 255, 0.4);
+  user-select: none;
+  transition: transform 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
