@@ -7,6 +7,7 @@
  */
 
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import * as Tone from "tone";
 
 // DOM要素
 const video = document.getElementById("webcam");
@@ -38,9 +39,80 @@ export let testDataDatasets = [];
 // 全ファイルのフレームを結合したフラット配列
 export let testDataFrames = [];
 
-// Web Audio API サウンドエンジン
+// Web Audio API サウンドエンジン ＆ Tone.js Salamander Grand Piano
 let audioCtx = null;
 let tapCount = 0;
+let pianoSampler = null;
+let isSamplerLoaded = false;
+
+// 周波数（Hz）からノート名への高精度マッピング
+const FREQ_TO_NOTE_MAP = {
+  // 左手音域（C4〜G4）
+  261.63: "C4",
+  293.66: "D4",
+  329.63: "E4",
+  349.23: "F4",
+  392.00: "G4",
+  // 右手音域（C5〜G5）
+  523.25: "C5",
+  587.33: "D5",
+  659.25: "E5",
+  698.46: "F5",
+  783.99: "G5"
+};
+
+/**
+ * Tone.js Salamander Grand Piano 音源サンプラーの初期化
+ */
+function initPianoSampler() {
+  try {
+    pianoSampler = new Tone.Sampler({
+      urls: {
+        A0: "A0.mp3",
+        C1: "C1.mp3",
+        "D#1": "Ds1.mp3",
+        "F#1": "Fs1.mp3",
+        A1: "A1.mp3",
+        C2: "C2.mp3",
+        "D#2": "Ds2.mp3",
+        "F#2": "Fs2.mp3",
+        A2: "A2.mp3",
+        C3: "C3.mp3",
+        "D#3": "Ds3.mp3",
+        "F#3": "Fs3.mp3",
+        A3: "A3.mp3",
+        C4: "C4.mp3",
+        "D#4": "Ds4.mp3",
+        "F#4": "Fs4.mp3",
+        A4: "A4.mp3",
+        C5: "C5.mp3",
+        "D#5": "Ds5.mp3",
+        "F#5": "Fs5.mp3",
+        A5: "A5.mp3",
+        C6: "C6.mp3",
+        "D#6": "Ds6.mp3",
+        "F#6": "Fs6.mp3",
+        A6: "A6.mp3",
+        C7: "C7.mp3",
+        "D#7": "Ds7.mp3",
+        "F#7": "Fs7.mp3",
+        A7: "A7.mp3",
+        C8: "C8.mp3"
+      },
+      release: 1.2,
+      baseUrl: "https://tonejs.github.io/audio/salamander/",
+      onload: () => {
+        isSamplerLoaded = true;
+        console.log("[AUDIO] Salamander Grand Piano サンプル音源のロードが完了しました");
+      }
+    }).toDestination();
+  } catch (err) {
+    console.warn("[AUDIO] Tone.Sampler 初期化エラー:", err);
+  }
+}
+
+// サンプラーの初期化を実行
+initPianoSampler();
 
 // 学習済みCSVから自動導出される閾値モデル（デフォルト値付き）
 let hitRyThreshold = 0.70;
@@ -54,6 +126,12 @@ let tapState = "IDLE";
  * AudioContextの初期化・再開（ブラウザのAutoplay Policy対応）
  */
 function ensureAudioContext() {
+  if (Tone.context.state !== "running") {
+    Tone.start().catch((err) => {
+      console.warn("[AUDIO] Tone.start エラー:", err);
+    });
+  }
+
   if (!audioCtx) {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
@@ -61,9 +139,7 @@ function ensureAudioContext() {
     }
   }
   if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume().then(() => {
-      console.log("[AUDIO] AudioContext resumed successfully (running)");
-    }).catch((err) => {
+    audioCtx.resume().catch((err) => {
       console.warn("[AUDIO] AudioContext resume failed:", err);
     });
   }
@@ -71,11 +147,10 @@ function ensureAudioContext() {
 }
 
 /**
- * ドレミファソが明瞭に聴き分けられるリッチなピアノ音響合成
- * 基音（Triangle）+ 第2倍音（Sine）+ 低域レゾナンスによる温かみのあるピアノ音色
+ * サンプルロード前やエラー時のオシレーター波形合成フォールバック
  * @param {number} freq 周波数 (Hz)
  */
-export function playTapSound(freq = 523.25) {
+function playSynthFallback(freq = 523.25) {
   const ctx = ensureAudioContext();
   if (!ctx) return;
 
@@ -86,7 +161,6 @@ export function playTapSound(freq = 523.25) {
   const now = ctx.currentTime;
   const masterGain = ctx.createGain();
 
-  // 1. 基音（Triangle波：ピアノの本体の芯のある音）
   const oscBase = ctx.createOscillator();
   const gainBase = ctx.createGain();
   oscBase.type = "triangle";
@@ -95,7 +169,6 @@ export function playTapSound(freq = 523.25) {
   oscBase.connect(gainBase);
   gainBase.connect(masterGain);
 
-  // 2. 第2倍音（Sine波：ピアノ弦の輝きと明るさ・オクターブ上）
   const oscHarmonic = ctx.createOscillator();
   const gainHarmonic = ctx.createGain();
   oscHarmonic.type = "sine";
@@ -104,17 +177,6 @@ export function playTapSound(freq = 523.25) {
   oscHarmonic.connect(gainHarmonic);
   gainHarmonic.connect(masterGain);
 
-  // 3. 第3倍音（Sine波：アタック時の明瞭度・音階の識別性を向上）
-  const oscAttack = ctx.createOscillator();
-  const gainAttack = ctx.createGain();
-  oscAttack.type = "sine";
-  oscAttack.frequency.setValueAtTime(freq * 3, now);
-  gainAttack.gain.setValueAtTime(0.10, now);
-  gainAttack.gain.exponentialRampToValueAtTime(0.001, now + 0.08); // すぐに減衰して打鍵感のみを演出
-  oscAttack.connect(gainAttack);
-  gainAttack.connect(masterGain);
-
-  // 全体エンベロープ（2msで立ち上がり、約0.26秒で自然な余韻を持って減衰）
   masterGain.gain.setValueAtTime(0.001, now);
   masterGain.gain.linearRampToValueAtTime(0.65, now + 0.003);
   masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
@@ -123,13 +185,41 @@ export function playTapSound(freq = 523.25) {
 
   oscBase.start(now);
   oscHarmonic.start(now);
-  oscAttack.start(now);
-
   oscBase.stop(now + 0.27);
   oscHarmonic.stop(now + 0.27);
-  oscAttack.stop(now + 0.27);
+}
 
-  // カウント更新
+/**
+ * Salamander Grand Piano実機サンプリング音源によるリアルなピアノ発音
+ * @param {number|string} targetFreqOrNote 周波数 (Hz) または 音名 ("C5", "D5" 等)
+ */
+export function playTapSound(targetFreqOrNote = 523.25) {
+  ensureAudioContext();
+
+  let noteName = null;
+  let freq = 523.25;
+
+  if (typeof targetFreqOrNote === "string") {
+    noteName = targetFreqOrNote;
+  } else if (typeof targetFreqOrNote === "number") {
+    freq = targetFreqOrNote;
+    const roundedFreq = Math.round(freq * 100) / 100;
+    noteName = FREQ_TO_NOTE_MAP[roundedFreq] || freq;
+  }
+
+  if (isSamplerLoaded && pianoSampler) {
+    try {
+      // 2分音符相当の自然な減衰でリアルなピアノを発音
+      pianoSampler.triggerAttackRelease(noteName, "2n");
+    } catch (e) {
+      console.warn("[AUDIO] Sampler 発音エラー、フォールバック合成を使用:", e);
+      playSynthFallback(freq);
+    }
+  } else {
+    // サンプル音源ロード完了前はフォールバック合成
+    playSynthFallback(freq);
+  }
+
   tapCount++;
   if (tapCountVal) {
     tapCountVal.textContent = `${tapCount}`;
@@ -648,51 +738,11 @@ export function getTargetFingerColor(stepIndex) {
   };
 }
 
-// 演奏時エフェクト（波紋＆光粒子）管理配列
+// 次の指への指定ビームエフェクト管理配列
 export const tapVisualEffects = [];
 
 /**
- * 打鍵時の指先演奏エフェクト（波紋サークル＋微小光パーティクル）を生成
- * @param {number} x
- * @param {number} y
- * @param {object} color
- */
-export function spawnTapEffect(x, y, color) {
-  // 1. 光の波紋リング（外側へ大きく広がるダイナミックパルス）
-  tapVisualEffects.push({
-    type: "ring",
-    x,
-    y,
-    radius: 12,
-    maxRadius: 80,
-    stroke: color.stroke,
-    glow: color.glow,
-    alpha: 1.0,
-    growth: 3.2,
-    decay: 0.032
-  });
-
-  // 2. 弾ける微小光パーティクル（8個・大きく鮮やかに飛散）
-  for (let i = 0; i < 8; i++) {
-    const angle = (Math.PI * 2 * i) / 8 + (Math.random() - 0.5) * 0.4;
-    const speed = 2.4 + Math.random() * 3.2;
-    tapVisualEffects.push({
-      type: "particle",
-      x,
-      y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      radius: 3.5 + Math.random() * 2.5,
-      fill: color.fill,
-      glow: color.glow,
-      alpha: 1.0,
-      decay: 0.03 + Math.random() * 0.02
-    });
-  }
-}
-
-/**
- * 次の指へ飛んでいく光のラインエフェクト（彗星ビーム）を生成
+ * 次の指へ飛んでいく光のラインエフェクト（指定ビーム）を生成
  * @param {number} fromX 始点X
  * @param {number} fromY 始点Y
  * @param {number} toX 終点X
@@ -706,7 +756,7 @@ export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
 
   // 制御点（始点と終点の中点から上空へ持ち上げてダイナミックなアーチを描く）
   const midX = (fromX + toX) / 2;
-  const midY = (fromY + toY) / 2 - Math.min(85, Math.max(35, dist * 0.38));
+  const midY = (fromY + toY) / 2 - Math.min(80, Math.max(30, dist * 0.35));
 
   tapVisualEffects.push({
     type: "beam",
@@ -717,20 +767,23 @@ export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
     midX,
     midY,
     progress: 0.0,
-    speed: 0.052, // 約19フレームで滑らかに着弾
-    trail: [],    // 軌跡座標履歴（最大18フレーム保持）
+    speed: 0.055, // 約18フレームで軽快に着弾
+    trail: [],    // 軌跡座標履歴
     color
   });
 }
 
 /**
- * 演奏エフェクトの更新＆描画
+ * 次の指への指定ビームエフェクトの更新＆描画（GPU負荷を抑えた高速・滑らか描画）
  * @param {CanvasRenderingContext2D} ctx
  */
 export function updateAndDrawTapEffects(ctx) {
   if (tapVisualEffects.length === 0) return;
 
   ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
   for (let i = tapVisualEffects.length - 1; i >= 0; i--) {
     const fx = tapVisualEffects[i];
 
@@ -743,112 +796,58 @@ export function updateAndDrawTapEffects(ctx) {
       const curX = invT * invT * fx.fromX + 2 * invT * t * fx.midX + t * t * fx.toX;
       const curY = invT * invT * fx.fromY + 2 * invT * t * fx.midY + t * t * fx.toY;
 
-      // 軌跡の追加（最新座標を先頭へ、最大24個保持して長く濃厚なビームを描く）
+      // 軌跡の追加（最大18個）
       fx.trail.unshift({ x: curX, y: curY });
-      if (fx.trail.length > 24) {
+      if (fx.trail.length > 18) {
         fx.trail.pop();
       }
 
-      // 極太レーザービームの描画（2層パス：外側ネオン光条 ＋ 内側ホワイトホットコア）
+      // ビーム軌跡の描画（2層パス：外側半透明ネオンカラー ＋ 内側高輝度ホワイトコア）
       if (fx.trail.length > 1) {
-        // パス1: 外側の極太発光ネオンライン（最大14px、強烈なグロー）
+        // パス1: 外側のネオン光条ライン（太さ最大 9px）
         for (let j = 0; j < fx.trail.length - 1; j++) {
           const pA = fx.trail[j];
           const pB = fx.trail[j + 1];
-          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.15);
+          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.2);
 
           ctx.beginPath();
           ctx.moveTo(pA.x, pA.y);
           ctx.lineTo(pB.x, pB.y);
-          ctx.shadowColor = fx.color.glow;
-          ctx.shadowBlur = 24 * trailAlpha;
-          ctx.strokeStyle = fx.color.stroke.replace(/[\d.]+\)$/, `${(trailAlpha * 0.95).toFixed(2)})`);
-          ctx.lineWidth = Math.max(3.0, 14.0 * trailAlpha);
-          ctx.lineCap = "round";
+          ctx.strokeStyle = fx.color.stroke.replace(/[\d.]+\)$/, `${(trailAlpha * 0.85).toFixed(2)})`);
+          ctx.lineWidth = Math.max(2.0, 9.0 * trailAlpha);
           ctx.stroke();
         }
 
-        // パス2: 内側の高輝度ホワイトコアライン（最大6px：芯が真っ白に燃え上がる演出）
+        // パス2: 内側の高輝度ホワイトコア（太さ最大 3.5px）
         for (let j = 0; j < fx.trail.length - 1; j++) {
           const pA = fx.trail[j];
           const pB = fx.trail[j + 1];
-          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.15);
+          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.2);
 
           ctx.beginPath();
           ctx.moveTo(pA.x, pA.y);
           ctx.lineTo(pB.x, pB.y);
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = `rgba(255, 255, 255, ${(trailAlpha * 0.9).toFixed(2)})`;
-          ctx.lineWidth = Math.max(1.5, 6.0 * trailAlpha);
-          ctx.lineCap = "round";
+          ctx.strokeStyle = `rgba(255, 255, 255, ${(trailAlpha * 0.95).toFixed(2)})`;
+          ctx.lineWidth = Math.max(1.0, 3.5 * trailAlpha);
           ctx.stroke();
         }
       }
 
-      // 先頭の極大発光光球（外側オーラ 半径 10px）
+      // 先頭の光球（外周カラー 半径 7px + 中心ホワイトコア 半径 3.5px）
       ctx.beginPath();
-      ctx.arc(curX, curY, 10.0, 0, 2 * Math.PI);
-      ctx.shadowColor = fx.color.glow;
-      ctx.shadowBlur = 32;
+      ctx.arc(curX, curY, 7.0, 0, 2 * Math.PI);
       ctx.fillStyle = fx.color.fill;
       ctx.fill();
 
-      // 先頭中心のホワイトホットコア（半径 5px）
       ctx.beginPath();
-      ctx.arc(curX, curY, 5.0, 0, 2 * Math.PI);
+      ctx.arc(curX, curY, 3.5, 0, 2 * Math.PI);
       ctx.fillStyle = "#ffffff";
       ctx.fill();
 
-      // 終点着弾時
+      // 終点着弾で消滅
       if (t >= 1.0) {
-        // 着弾時の光パルス波紋
-        tapVisualEffects.push({
-          type: "ring",
-          x: fx.toX,
-          y: fx.toY,
-          radius: 6,
-          maxRadius: 45,
-          stroke: fx.color.stroke,
-          glow: fx.color.glow,
-          alpha: 0.95,
-          growth: 2.6,
-          decay: 0.05
-        });
         tapVisualEffects.splice(i, 1);
       }
-      continue;
-    }
-
-    fx.alpha -= fx.decay;
-
-    if (fx.alpha <= 0) {
-      tapVisualEffects.splice(i, 1);
-      continue;
-    }
-
-    if (fx.type === "ring") {
-      fx.radius += fx.growth;
-      ctx.beginPath();
-      ctx.arc(fx.x, fx.y, fx.radius, 0, 2 * Math.PI);
-      ctx.shadowColor = fx.glow;
-      ctx.shadowBlur = 14;
-      ctx.strokeStyle = fx.stroke.replace(/[\d.]+\)$/, `${fx.alpha.toFixed(2)})`);
-      ctx.lineWidth = 3.5 * fx.alpha;
-      ctx.stroke();
-    } else if (fx.type === "particle") {
-      fx.x += fx.vx;
-      fx.y += fx.vy;
-      fx.vx *= 0.94;
-      fx.vy *= 0.94;
-
-      ctx.beginPath();
-      ctx.arc(fx.x, fx.y, fx.radius * fx.alpha, 0, 2 * Math.PI);
-      ctx.shadowColor = fx.glow;
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = fx.fill;
-      ctx.globalAlpha = Math.max(0, fx.alpha);
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
     }
   }
   ctx.restore();
@@ -1641,9 +1640,6 @@ function drawRawHandLandmarks(results) {
       // 正解音階を発音
       playTapSound(currentTarget.freq);
       updateStateHud("TOUCHED", true);
-
-      // 演奏時エフェクト（指先から波紋と微小光パーティクルが弾ける）を生成！
-      spawnTapEffect(smoothTip.x, smoothTip.y, targetColor);
 
       console.log(
         `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`
