@@ -61,6 +61,12 @@ const FREQ_TO_NOTE_MAP = {
   783.99: "G5"
 };
 
+// ノート名から周波数（Hz）への逆引きマッピング（フォールバック合成時にも使用）
+const NOTE_TO_FREQ_MAP = Object.entries(FREQ_TO_NOTE_MAP).reduce((acc, [f, n]) => {
+  acc[n] = parseFloat(f);
+  return acc;
+}, {});
+
 /**
  * Tone.js Salamander Grand Piano 音源サンプラーの初期化
  */
@@ -192,8 +198,9 @@ function playSynthFallback(freq = 523.25) {
 /**
  * Salamander Grand Piano実機サンプリング音源によるリアルなピアノ発音
  * @param {number|string} targetFreqOrNote 周波数 (Hz) または 音名 ("C5", "D5" 等)
+ * @param {boolean} countAsTap 打鍵回数としてカウントするかどうか（左手自動伴奏等はfalse）
  */
-export function playTapSound(targetFreqOrNote = 523.25) {
+export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true) {
   ensureAudioContext();
 
   let noteName = null;
@@ -201,6 +208,7 @@ export function playTapSound(targetFreqOrNote = 523.25) {
 
   if (typeof targetFreqOrNote === "string") {
     noteName = targetFreqOrNote;
+    freq = NOTE_TO_FREQ_MAP[noteName] || 523.25;
   } else if (typeof targetFreqOrNote === "number") {
     freq = targetFreqOrNote;
     const roundedFreq = Math.round(freq * 100) / 100;
@@ -220,9 +228,11 @@ export function playTapSound(targetFreqOrNote = 523.25) {
     playSynthFallback(freq);
   }
 
-  tapCount++;
-  if (tapCountVal) {
-    tapCountVal.textContent = `${tapCount}`;
+  if (countAsTap) {
+    tapCount++;
+    if (tapCountVal) {
+      tapCountVal.textContent = `${tapCount}`;
+    }
   }
 }
 
@@ -459,6 +469,34 @@ export const SAINTS_MARCH_SEQUENCE = [
   { step: 32, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
 ];
 
+// 『彼こそが海賊（He's a Pirate）』運指・音名シーケンス定義（右手5本指固定・左手自動低音伴奏・全16音）
+// 1:親指(C5/ド), 2:人差し指(D5/レ★主音), 3:中指(E5/ミ), 4:薬指(F5/ファ), 5:小指(G5/ソ)
+export const PIRATES_SEQUENCE = [
+  // フレーズ1: レ レ レ レ ミ (5音) - 左手伴奏: D4 (Dm)
+  { step: 1,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "D4" },
+  { step: 2,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 3,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 4,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+
+  // フレーズ2: ファ ファ ファ ファ ソ (5音) - 左手伴奏: F4 (F)
+  { step: 6,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: "F4" },
+  { step: 7,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 8,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 9,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 10, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  rightFinger: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+
+  // フレーズ3: ミ ミ ミ レ ド (5音) - 左手伴奏: C4 (C)
+  { step: 11, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C4" },
+  { step: 12, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 13, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 14, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 15, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  rightFinger: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+
+  // フレーズ4: レ ─── (1音) - 左手伴奏: D4 (Dm)
+  { step: 16, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "D4" }
+];
+
 // 演奏曲リスト
 export const SONGS = {
   mary: {
@@ -472,6 +510,12 @@ export const SONGS = {
     title: "聖者の行進",
     totalPhrases: 3,
     sequence: SAINTS_MARCH_SEQUENCE
+  },
+  pirates: {
+    id: "pirates",
+    title: "彼こそが海賊",
+    totalPhrases: 4,
+    sequence: PIRATES_SEQUENCE
   }
 };
 
@@ -1637,12 +1681,17 @@ function drawRawHandLandmarks(results) {
       tapState = "TOUCHED";
       const currentTarget = currentSequence[currentSongStep];
 
-      // 正解音階を発音
-      playTapSound(currentTarget.freq);
+      // 右手正解メロディ音を発音
+      playTapSound(currentTarget.rightNote || currentTarget.freq, true);
+
+      // 左手自動伴奏（autoLeftNote）が設定されている場合は即座に重ねて発音
+      if (currentTarget.autoLeftNote) {
+        playTapSound(currentTarget.autoLeftNote, false);
+      }
       updateStateHud("TOUCHED", true);
 
       console.log(
-        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}`
+        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}${currentTarget.autoLeftNote ? ` [左手伴奏: ${currentTarget.autoLeftNote}]` : ""}`
       );
 
       // 打鍵直前の指先座標を記録
