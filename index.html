@@ -11,6 +11,11 @@
   </head>
   <body>
     <div id="app">
+      <!-- 初回オーディオ開始プロンプト（Autoplay Policy対策） -->
+      <div id="audio-start-banner" class="audio-start-banner">
+        <span>♪ 画面をタップしてサウンドを有効化</span>
+      </div>
+
       <!-- メイン映像コンテナ（ビデオとCanvasを自然比率で完全重畳） -->
       <div class="video-container">
         <video id="webcam" playsinline autoplay muted></video>
@@ -22,9 +27,9 @@
         <button id="song-select-btn" class="song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
         <div id="song-select-menu" class="song-select-menu hidden">
           <div class="song-menu-header">曲を選択</div>
-          <button class="song-menu-item active" data-song="mary">メリーさんの羊</button>
+          <button class="song-menu-item" data-song="mary">メリーさんの羊</button>
           <button class="song-menu-item" data-song="saints">聖者の行進</button>
-          <button class="song-menu-item" data-song="pirates">彼こそが海賊</button>
+          <button class="song-menu-item active" data-song="pirates">彼こそが海賊</button>
         </div>
       </div>
 
@@ -33,15 +38,6 @@
         <div id="countdown-text" class="countdown-text">3</div>
       </div>
 
-      <!-- 画面上部：メロディ＆運指ガイドバー -->
-      <div id="song-guide-panel" class="song-guide-panel">
-        <div class="song-header">
-          <span class="song-title">メリーさんの羊</span>
-          <span id="song-phrase-label" class="song-phrase-badge">PHRASE 1 / 4</span>
-          <span id="song-step-progress" class="song-step-badge">1 / 25</span>
-        </div>
-        <div class="song-notes-stream" id="song-notes-stream"></div>
-      </div>
 
       <!-- デバッグHUD（左下） -->
       <div id="debug-panel" class="debug-panel">

@@ -30,9 +30,6 @@ const csvFileInput = document.getElementById("csv-file-input");
 const testSoundBtn = document.getElementById("test-sound-btn");
 const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
-const songPhraseLabel = document.getElementById("song-phrase-label");
-const songStepProgress = document.getElementById("song-step-progress");
-const songNotesStream = document.getElementById("song-notes-stream");
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -45,15 +42,21 @@ let tapCount = 0;
 let pianoSampler = null;
 let isSamplerLoaded = false;
 
-// 周波数（Hz）からノート名への高精度マッピング
+// 周波数（Hz）からノート名への高精度マッピング（自然な中央オクターブ C4〜G4 を右手、低音 C3〜G3 を左手伴奏に設定）
 const FREQ_TO_NOTE_MAP = {
-  // 左手音域（C4〜G4）
+  // 左手低音伴奏域（C3〜G3）
+  130.81: "C3",
+  146.83: "D3",
+  164.81: "E3",
+  174.61: "F3",
+  196.00: "G3",
+  // 右手メロディ中央域（C4〜G4）
   261.63: "C4",
   293.66: "D4",
   329.63: "E4",
   349.23: "F4",
   392.00: "G4",
-  // 右手音域（C5〜G5）
+  // （互換用高音域 C5〜G5）
   523.25: "C5",
   587.33: "D5",
   659.25: "E5",
@@ -131,38 +134,36 @@ let tapState = "IDLE";
 /**
  * AudioContextの初期化・再開（ブラウザのAutoplay Policy対応）
  */
-function ensureAudioContext() {
+export function ensureAudioContext() {
   if (Tone.context.state !== "running") {
     Tone.start().catch((err) => {
       console.warn("[AUDIO] Tone.start エラー:", err);
     });
   }
 
-  if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
-      audioCtx = new AudioContextClass();
-    }
-  }
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume().catch((err) => {
+  const rawCtx = Tone.getContext().rawContext;
+  if (rawCtx && rawCtx.state === "suspended") {
+    rawCtx.resume().catch((err) => {
       console.warn("[AUDIO] AudioContext resume failed:", err);
     });
   }
-  return audioCtx;
+
+  // 初回サウンド有効化バナーがあれば非表示にする
+  const banner = document.getElementById("audio-start-banner");
+  if (banner && !banner.classList.contains("hidden")) {
+    banner.classList.add("hidden");
+  }
+
+  return rawCtx;
 }
 
 /**
- * サンプルロード前やエラー時のオシレーター波形合成フォールバック
+ * サンプルロード前やエラー時のオシレーター波形合成フォールバック（Web Audio API 加算合成）
  * @param {number} freq 周波数 (Hz)
  */
 function playSynthFallback(freq = 523.25) {
   const ctx = ensureAudioContext();
   if (!ctx) return;
-
-  if (ctx.state === "suspended") {
-    ctx.resume();
-  }
 
   const now = ctx.currentTime;
   const masterGain = ctx.createGain();
@@ -390,137 +391,140 @@ export const FINGER_CONFIGS = {
   }
 };
 
-// 「メリーさんの羊」運指・音名シーケンス定義（右手基準・全25音）
-// 1:親指(ド), 2:人差し指(レ), 3:中指(ミ), 4:薬指(ファ), 5:小指(ソ)
+// 「メリーさんの羊」運指・音名シーケンス定義（右手中央オクターブ C4〜G4・全25音）
+// 1:親指(C4/ド), 2:人差し指(D4/レ), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
 export const MARY_LAMB_SEQUENCE = [
   // フレーズ1: ミ レ ド レ ミ ミ ミ (7音)
-  { step: 1, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 3, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 4, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 5, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 6, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 7, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 1, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 3, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 4, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 5, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 6, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 7, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
 
   // フレーズ2: レ レ レ - ミ ソ ソ (6音)
-  { step: 8,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 9,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 10, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 11, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 12, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 13, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
+  { step: 8,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 9,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 10, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 11, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 12, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 13, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
 
   // フレーズ3: ミ レ ド レ ミ ミ ミ (7音)
-  { step: 14, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 15, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 16, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 17, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 18, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 19, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 20, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
+  { step: 14, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 15, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 16, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 17, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 18, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 19, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 20, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
 
   // フレーズ4: レ レ ミ レ ド (5音)
-  { step: 21, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 22, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 23, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 24, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 25, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
+  { step: 21, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 22, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 23, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 24, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 25, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 }
 ];
 
-// 「聖者の行進（When the Saints Go Marching In）」運指・音名シーケンス定義（右手基準・全32音）
-// 1:親指(ド), 2:人差し指(レ), 3:中指(ミ), 4:薬指(ファ), 5:小指(ソ)
+// 「聖者の行進（When the Saints Go Marching In）」運指・音名シーケンス定義（右手中央オクターブ C4〜G4・全32音）
+// 1:親指(C4/ド), 2:人差し指(D4/レ), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
 export const SAINTS_MARCH_SEQUENCE = [
   // フレーズ1: ド ミ ファ ソ / ド ミ ファ ソ / ド ミ ファ ソ ミ ド ミ レ (16音)
-  { step: 1,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
-  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 5,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 6,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 7,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
-  { step: 8,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 10, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 11, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
-  { step: 12, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 14, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 15, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 16, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
+  { step: 1,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
+  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 5,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 6,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 7,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
+  { step: 8,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 10, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 11, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
+  { step: 12, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 14, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 15, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 16, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
 
   // フレーズ2: ミ ミ レ ド ド ミ ソ ソ ファ (9音)
-  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 19, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 20, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 21, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 23, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 24, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 25, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
+  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 19, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 20, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 21, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 23, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 24, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 25, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
 
   // フレーズ3: ミ ファ ソ ミ ド レ ド (7音)
-  { step: 26, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 27, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 698.46 },
-  { step: 28, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 783.99 },
-  { step: 29, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 659.25 },
-  { step: 30, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 },
-  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 587.33 },
-  { step: 32, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 523.25 }
+  { step: 26, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 27, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
+  { step: 28, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  { step: 29, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  { step: 30, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
+  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
+  { step: 32, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 }
 ];
 
-// 『彼こそが海賊（He's a Pirate）』運指・音名シーケンス定義（右手5本指固定・左手自動低音伴奏・全16音）
-// 1:親指(C5/ド), 2:人差し指(D5/レ★主音), 3:中指(E5/ミ), 4:薬指(F5/ファ), 5:小指(G5/ソ)
+// 『彼こそが海賊（He's a Pirate）』運指・音名シーケンス定義（右手中央オクターブ C4〜G4・左手低音伴奏 C3〜G3・全16音）
+// 1:親指(C4/ド), 2:人差し指(D4/レ★主音), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
 export const PIRATES_SEQUENCE = [
-  // フレーズ1: レ レ レ レ ミ (5音) - 左手伴奏: D4 (Dm)
-  { step: 1,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "D4" },
-  { step: 2,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 3,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 4,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  // フレーズ1: レ レ レ レ ミ (5音) - 左手伴奏: D3 (Dm)
+  { step: 1,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: "D3" },
+  { step: 2,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
+  { step: 3,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
+  { step: 4,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
+  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
 
-  // フレーズ2: ファ ファ ファ ファ ソ (5音) - 左手伴奏: F4 (F)
-  { step: 6,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: "F4" },
-  { step: 7,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
-  { step: 8,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
-  { step: 9,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
-  { step: 10, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  rightFinger: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+  // フレーズ2: ファ ファ ファ ファ ソ (5音) - 左手伴奏: F3 (F)
+  { step: 6,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: "F3" },
+  { step: 7,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
+  { step: 8,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
+  { step: 9,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
+  { step: 10, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  rightFinger: "PINKY",  note: "ソ", rightNote: "G4", freq: 392.00, autoLeftNote: null },
 
-  // フレーズ3: ミ ミ ミ レ ド (5音) - 左手伴奏: C4 (C)
-  { step: 11, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C4" },
-  { step: 12, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 13, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 14, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 15, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  rightFinger: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  // フレーズ3: ミ ミ ミ レ ド (5音) - 左手伴奏: C3 (C)
+  { step: 11, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: "C3" },
+  { step: 12, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
+  { step: 13, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
+  { step: 14, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
+  { step: 15, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  rightFinger: "THUMB",  note: "ド", rightNote: "C4", freq: 261.63, autoLeftNote: null },
 
-  // フレーズ4: レ ─── (1音) - 左手伴奏: D4 (Dm)
-  { step: 16, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "D4" }
+  // フレーズ4: レ ─── (1音) - 左手伴奏: D3 (Dm)
+  { step: 16, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: "D3" }
 ];
 
 // 演奏曲リスト
 export const SONGS = {
+  pirates: {
+    id: "pirates",
+    title: "彼こそが海賊",
+    bpm: 76,
+    totalPhrases: 4,
+    sequence: PIRATES_SEQUENCE
+  },
   mary: {
     id: "mary",
     title: "メリーさんの羊",
+    bpm: 100,
     totalPhrases: 4,
     sequence: MARY_LAMB_SEQUENCE
   },
   saints: {
     id: "saints",
     title: "聖者の行進",
+    bpm: 116,
     totalPhrases: 3,
     sequence: SAINTS_MARCH_SEQUENCE
-  },
-  pirates: {
-    id: "pirates",
-    title: "彼こそが海賊",
-    totalPhrases: 4,
-    sequence: PIRATES_SEQUENCE
   }
 };
 
-export let currentSongId = "mary";
-export let currentSequence = SONGS.mary.sequence;
+export let currentSongId = "pirates";
+export let currentSequence = SONGS.pirates.sequence;
 export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
 export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指
 
@@ -582,6 +586,7 @@ export function startCountdown(callback) {
   }, 1000);
 }
 
+
 /**
  * 楽曲の切り替え
  * @param {string} songId
@@ -601,11 +606,6 @@ export function selectSong(songId) {
   const menu = document.getElementById("song-select-menu");
   if (menu) menu.classList.add("hidden");
 
-  // ガイドUIのタイトルを更新
-  const titleEl = document.querySelector(".song-title");
-  if (titleEl) {
-    titleEl.textContent = SONGS[songId].title;
-  }
 
   // 1音目のターゲット指をセット＆ガイドUI再描画
   setTargetFinger(currentSequence[0].fingerKey);
@@ -617,13 +617,15 @@ export function selectSong(songId) {
   });
 }
 
-// 選択中の指4点専用の適応フィルター
-const targetPointFilters = {
-  p1: new PointFilter(1.5, 0.01),
-  p2: new PointFilter(1.5, 0.01),
-  p3: new PointFilter(1.5, 0.01),
-  tip: new PointFilter(1.5, 0.01)
-};
+// 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
+// 手首（0）から親指・人差し指・中指・薬指・小指（20）まで全関節を独立して常時平滑化
+const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(1.2, 0.008));
+
+// 一時的な検出ロスト対策（数フレームの途切れで骨格が点滅・ジャンプするのを防止）
+let lostFrames = 0;
+const MAX_LOST_FRAMES = 3;
+let lastSmoothedLandmarks = null;
+let lastRawLandmarks = null;
 
 // 指ごとの学習閾値モデル
 export const fingerThresholdModels = {
@@ -645,15 +647,12 @@ export const fingerDatasets = {
 
 /**
  * ターゲット指の変更と個別閾値の適用
+ * ※指が切り替わっても全ランドマークフィルターはリセットせず継続し、座標飛びを防止
  * @param {string} fingerKey
  */
 export function setTargetFinger(fingerKey) {
   if (!FINGER_CONFIGS[fingerKey]) return;
   currentFingerKey = fingerKey;
-  targetPointFilters.p1.reset();
-  targetPointFilters.p2.reset();
-  targetPointFilters.p3.reset();
-  targetPointFilters.tip.reset();
 
   // 指別学習モデルの閾値を適用
   applyFingerThreshold(fingerKey);
@@ -662,19 +661,12 @@ export function setTargetFinger(fingerKey) {
 }
 
 /**
- * メロディ＆運指ガイドUIの更新
+ * 楽曲進行とターゲット指UIの更新
  */
 export function renderSongGuideUI() {
-  const currentSong = SONGS[currentSongId] || SONGS.mary;
   const currentItem = currentSequence[currentSongStep];
   if (!currentItem) return;
 
-  if (songPhraseLabel) {
-    songPhraseLabel.textContent = `PHRASE ${currentItem.phrase} / ${currentSong.totalPhrases}`;
-  }
-  if (songStepProgress) {
-    songStepProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
-  }
   if (targetFingerVal) {
     targetFingerVal.textContent = `${currentItem.fingerNum} ${currentItem.note} (${currentItem.fingerKey})`;
     targetFingerVal.classList.add("spike-highlight");
@@ -684,32 +676,6 @@ export function renderSongGuideUI() {
   }
   if (targetTapProgress) {
     targetTapProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
-  }
-
-  // 画面上部の音符ストリームUIを描画
-  if (songNotesStream) {
-    const total = currentSequence.length;
-    const startIdx = Math.max(0, currentSongStep - 2);
-    const endIdx = Math.min(total, currentSongStep + 6);
-
-    let html = "";
-    for (let i = startIdx; i < endIdx; i++) {
-      const item = currentSequence[i];
-      let statusClass = "";
-      if (i < currentSongStep) {
-        statusClass = "done";
-      } else if (i === currentSongStep) {
-        statusClass = "current";
-      }
-
-      html += `
-        <div class="note-chip ${statusClass}">
-          <span class="note-chip-num">${item.fingerNum}</span>
-          <span class="note-chip-name">${item.note}</span>
-        </div>
-      `;
-    }
-    songNotesStream.innerHTML = html;
   }
 }
 
@@ -1314,6 +1280,7 @@ async function initHandLandmarker() {
   for (const modelPath of modelPaths) {
     try {
       // 60fps安定化のため検出対象手を1つに限定して推論時間を最小化
+      // 水平ローアングルでの打鍵時（机面接触・影）の再検出ループを防ぐため追従閾値を適正化
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: modelPath,
@@ -1321,9 +1288,9 @@ async function initHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 1,
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5
+        minHandDetectionConfidence: 0.4,
+        minHandPresenceConfidence: 0.4,
+        minTrackingConfidence: 0.3
       });
       loaded = true;
       break;
@@ -1336,7 +1303,10 @@ async function initHandLandmarker() {
             delegate: "CPU"
           },
           runningMode: "VIDEO",
-          numHands: 1
+          numHands: 1,
+          minHandDetectionConfidence: 0.4,
+          minHandPresenceConfidence: 0.4,
+          minTrackingConfidence: 0.3
         });
         loaded = true;
         break;
@@ -1389,14 +1359,14 @@ async function startFrontCamera() {
 
   // 16:9の自然な画角比率を維持しつつ、60fps出力（720p / 540p / 360p）を優先探索
   const tryConstraints = [
-    // 1. 720p (1280x720, 16:9) 60fps
+    // 1. 720p (1280x720, 16:9) 60fps（室内暗化防止のためmin24fps）
     {
       video: {
         facingMode: "user",
         width: { ideal: 1280 },
         height: { ideal: 720 },
         aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 45 }
+        frameRate: { ideal: 60, min: 24 }
       },
       audio: false
     },
@@ -1407,7 +1377,7 @@ async function startFrontCamera() {
         width: { ideal: 960 },
         height: { ideal: 540 },
         aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 45 }
+        frameRate: { ideal: 60, min: 24 }
       },
       audio: false
     },
@@ -1418,7 +1388,7 @@ async function startFrontCamera() {
         width: { ideal: 640 },
         height: { ideal: 360 },
         aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 45 }
+        frameRate: { ideal: 60, min: 24 }
       },
       audio: false
     },
@@ -1516,21 +1486,29 @@ function updateCanvasResolution() {
   }
 }
 
+let lastVideoTimestamp = -1;
+
 /**
  * 毎フレームの推論処理（単一フレーム）
+ * @param {number} frameTime
  */
-function processVideoFrame() {
+function processVideoFrame(frameTime) {
   if (!isPredicting) return;
+
+  // 正確なフレーム時間をミリ秒で算出（MediaPipe VIDEOモードが要求する厳密な単調増加を保証）
+  const now = typeof frameTime === "number" ? frameTime : performance.now();
+  const timestampMs = Math.max(now, lastVideoTimestamp + 1.0);
+  lastVideoTimestamp = timestampMs;
 
   const startTime = performance.now();
 
-  // VIDEOモードでの同期推論
-  const results = handLandmarker.detectForVideo(video, startTime);
+  // VIDEOモードでの同期推論（正確なタイムスタンプにより内部トラッキング予測器が安定化）
+  const results = handLandmarker.detectForVideo(video, timestampMs);
 
   const calcDuration = performance.now() - startTime;
   inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
 
-  // 生ランドマーク座標の直接描画（平滑化フィルターなし）
+  // 生ランドマーク座標の直接描画
   drawRawHandLandmarks(results);
 
   // FPS更新
@@ -1545,15 +1523,16 @@ function schedulePredictLoop() {
   if (!isPredicting) return;
 
   if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
-    video.requestVideoFrameCallback(() => {
-      processVideoFrame();
+    video.requestVideoFrameCallback((now, metadata) => {
+      const frameTime = (metadata && metadata.presentationTime) ? metadata.presentationTime * 1000 : now;
+      processVideoFrame(frameTime);
       schedulePredictLoop();
     });
   } else {
-    requestAnimationFrame(() => {
+    requestAnimationFrame((now) => {
       if (video.currentTime !== lastVideoTime && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         lastVideoTime = video.currentTime;
-        processVideoFrame();
+        processVideoFrame(now);
       }
       schedulePredictLoop();
     });
@@ -1561,8 +1540,8 @@ function schedulePredictLoop() {
 }
 
 /**
- * 人差し指フォーカス描画、打鍵・リフト用特徴量の算出
- * 平滑化フィルターや座標固定クリップは挟まず、Raw座標にダイレクト追従します
+ * 手の全21ランドマークの適応平滑化描画、打鍵・リフト用特徴量の算出
+ * 手首・手のひら・全指先を独立した 1 Euro Filter で常時平滑化し、ジッターと飛びを完全排除
  * @param {object} results
  */
 function drawRawHandLandmarks(results) {
@@ -1570,32 +1549,71 @@ function drawRawHandLandmarks(results) {
 
   const fingerConfig = FINGER_CONFIGS[currentFingerKey] || FINGER_CONFIGS.THUMB;
   const targetIndices = fingerConfig.indices;
-
-  if (!results || !results.landmarks || results.landmarks.length === 0) {
-    handsCount.textContent = "0";
-    if (tapState !== "IDLE") {
-      tapState = "IDLE";
-      updateStateHud("IDLE", false);
-    }
-    // 手ロスト時にフィルターをリセット（再検出時の座標ジャンプ防止）
-    targetPointFilters.p1.reset();
-    targetPointFilters.p2.reset();
-    targetPointFilters.p3.reset();
-    targetPointFilters.tip.reset();
-    resetDebugMetrics();
-    updateAndDrawTapEffects(canvasCtx);
-    return;
-  }
-
-  handsCount.textContent = `${results.landmarks.length}`;
-
   const width = canvas.width;
   const height = canvas.height;
+  const now = performance.now();
 
-  // メインの手（先頭の手）
-  const landmarks = results.landmarks[0];
+  const hasHands = results && results.landmarks && results.landmarks.length > 0;
 
-  // 1. 対象指以外の骨格（人差し指を含むすべて）を薄いグレースケールで描画
+  if (!hasHands) {
+    lostFrames++;
+    // 3フレーム以内（約50ms）の一時的ロストであれば直前の平滑化座標で描画を維持し、画面の点滅・ジャンプを防止
+    if (lostFrames <= MAX_LOST_FRAMES && lastSmoothedLandmarks) {
+      // 直前フレームの座標をそのまま使用して継続描画
+    } else {
+      handsCount.textContent = "0";
+      if (tapState !== "IDLE") {
+        tapState = "IDLE";
+        updateStateHud("IDLE", false);
+      }
+      // 完全に画角から外れた場合のみフィルターをリセット
+      landmarkFilters.forEach((f) => f.reset());
+      lastSmoothedLandmarks = null;
+      lastRawLandmarks = null;
+      resetDebugMetrics();
+      updateAndDrawTapEffects(canvasCtx);
+      return;
+    }
+  } else {
+    lostFrames = 0;
+  }
+
+  handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
+
+  // メインの手のランドマーク生座標
+  let landmarks = hasHands ? results.landmarks[0] : lastRawLandmarks;
+  if (!landmarks) return;
+
+  // 1フレームでの極端な座標ジャンプ（Palm Detection誤検出や左右反転ワープ）の遮断ガード
+  let isAnomalousJump = false;
+  if (hasHands && lastRawLandmarks) {
+    const rawWrist = landmarks[0];
+    const prevWrist = lastRawLandmarks[0];
+    const jumpDist = Math.hypot((rawWrist.x - prevWrist.x) * width, (rawWrist.y - prevWrist.y) * height);
+    // 1フレーム（約16ms）で画面幅の20%以上手首がワープした場合はAIの誤検出フレームとして直前座標を維持
+    if (jumpDist > width * 0.20) {
+      isAnomalousJump = true;
+      landmarks = lastRawLandmarks;
+    }
+  }
+  if (!isAnomalousJump && hasHands) {
+    lastRawLandmarks = landmarks;
+  }
+
+  // 全21関節点の独立平滑化（1 Euro Filter）
+  let smoothedLandmarks = [];
+  if (hasHands && !isAnomalousJump) {
+    for (let i = 0; i < 21; i++) {
+      const raw = landmarks[i];
+      const pt = landmarkFilters[i].filter(raw.x * width, raw.y * height, now);
+      smoothedLandmarks.push(pt);
+    }
+    lastSmoothedLandmarks = smoothedLandmarks;
+  } else {
+    smoothedLandmarks = lastSmoothedLandmarks;
+  }
+
+  // 1. 対象指以外の骨格（手のひら・他の指すべて）を平滑化座標で薄いグレースケール描画
   const otherConnections = HAND_CONNECTIONS.filter(
     ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
   );
@@ -1606,51 +1624,29 @@ function drawRawHandLandmarks(results) {
   canvasCtx.lineJoin = "round";
 
   otherConnections.forEach(([startIdx, endIdx]) => {
-    const p1 = landmarks[startIdx];
-    const p2 = landmarks[endIdx];
+    const p1 = smoothedLandmarks[startIdx];
+    const p2 = smoothedLandmarks[endIdx];
 
     canvasCtx.beginPath();
-    canvasCtx.moveTo(p1.x * width, p1.y * height);
-    canvasCtx.lineTo(p2.x * width, p2.y * height);
+    canvasCtx.moveTo(p1.x, p1.y);
+    canvasCtx.lineTo(p2.x, p2.y);
     canvasCtx.stroke();
   });
 
-  // 対象指以外の関節点（人差し指を含む・極小薄グレー）
-  landmarks.forEach((p, idx) => {
+  // 対象指以外の関節点（極小薄グレー）
+  smoothedLandmarks.forEach((pt, idx) => {
     if (targetIndices.includes(idx)) return;
     canvasCtx.beginPath();
-    canvasCtx.arc(p.x * width, p.y * height, 2, 0, 2 * Math.PI);
+    canvasCtx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
     canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
     canvasCtx.fill();
   });
 
-  // 2手目以降が存在する場合も薄いグレースケールで描画
-  if (results.landmarks.length > 1) {
-    for (let i = 1; i < results.landmarks.length; i++) {
-      const extra = results.landmarks[i];
-      HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
-        const p1 = extra[startIdx];
-        const p2 = extra[endIdx];
-        canvasCtx.beginPath();
-        canvasCtx.moveTo(p1.x * width, p1.y * height);
-        canvasCtx.lineTo(p2.x * width, p2.y * height);
-        canvasCtx.stroke();
-      });
-    }
-  }
-
-  // 2. 選択中指ランドマークの生ピクセル座標
-  const rawP1 = { x: landmarks[fingerConfig.p1Idx].x * width, y: landmarks[fingerConfig.p1Idx].y * height };
-  const rawP2 = { x: landmarks[fingerConfig.p2Idx].x * width, y: landmarks[fingerConfig.p2Idx].y * height };
-  const rawP3 = { x: landmarks[fingerConfig.p3Idx].x * width, y: landmarks[fingerConfig.p3Idx].y * height };
-  const rawTip = { x: landmarks[fingerConfig.tipIdx].x * width, y: landmarks[fingerConfig.tipIdx].y * height };
-
-  // 1 Euro Filterによる適応平滑化（静止時はジッター完全除去、打鍵時は遅延ゼロ追従）
-  const now = performance.now();
-  const smoothP1 = targetPointFilters.p1.filter(rawP1.x, rawP1.y, now);
-  const smoothP2 = targetPointFilters.p2.filter(rawP2.x, rawP2.y, now);
-  const smoothP3 = targetPointFilters.p3.filter(rawP3.x, rawP3.y, now);
-  const smoothTip = targetPointFilters.tip.filter(rawTip.x, rawTip.y, now);
+  // 2. 選択中指の平滑化ピクセル座標
+  const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
+  const smoothP2 = smoothedLandmarks[fingerConfig.p2Idx];
+  const smoothP3 = smoothedLandmarks[fingerConfig.p3Idx];
+  const smoothTip = smoothedLandmarks[fingerConfig.tipIdx];
 
   // 最新平滑化座標の保持
   currentTip.x = smoothTip.x;
@@ -1658,9 +1654,10 @@ function drawRawHandLandmarks(results) {
 
   // 手首（Landmark 0: Wrist）と対象指の付け根（baseIdx）間の3D距離 L（手の基準長）
   const baseLm = landmarks[fingerConfig.baseIdx];
-  const dx0base = baseLm.x - landmarks[0].x;
-  const dy0base = baseLm.y - landmarks[0].y;
-  const dz0base = (baseLm.z ?? 0) - (landmarks[0].z ?? 0);
+  const wristLm = landmarks[0];
+  const dx0base = baseLm.x - wristLm.x;
+  const dy0base = baseLm.y - wristLm.y;
+  const dz0base = (baseLm.z ?? 0) - (wristLm.z ?? 0);
   const L = Math.hypot(dx0base, dy0base, dz0base) || 0.001;
 
   // 対象指の基準点ピクセル座標（smoothP2 または smoothP1）
@@ -1668,7 +1665,6 @@ function drawRawHandLandmarks(results) {
 
   // 平滑化座標に基づく安定した相対変位 ry
   const currentRy = (smoothTip.y - smoothBase.y) / (height * L);
-  const rawRy = (landmarks[fingerConfig.tipIdx].y - baseLm.y) / L;
 
   // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
   const targetColor = getTargetFingerColor(currentSongStep);
@@ -1679,6 +1675,8 @@ function drawRawHandLandmarks(results) {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
+
+      // 現在の音符を取得
       const currentTarget = currentSequence[currentSongStep];
 
       // 右手正解メロディ音を発音
@@ -1703,11 +1701,11 @@ function drawRawHandLandmarks(results) {
       const nextTarget = currentSequence[currentSongStep];
       const nextColor = getTargetFingerColor(currentSongStep);
 
-      // 次の指先座標（最新ランドマークから取得）
+      // 次の指先座標（全点平滑化済み座標から取得してブレ・飛びをゼロに）
       const nextFingerCfg = FINGER_CONFIGS[nextTarget.fingerKey] || fingerConfig;
-      const nextTipLm = landmarks[nextFingerCfg.tipIdx];
-      const toTipX = nextTipLm ? nextTipLm.x * width : fromTipX;
-      const toTipY = nextTipLm ? nextTipLm.y * height : fromTipY;
+      const nextSmoothTip = smoothedLandmarks[nextFingerCfg.tipIdx];
+      const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
+      const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
 
       // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
       spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
@@ -1972,7 +1970,16 @@ if (songSelectBtn && songSelectMenu) {
   });
 }
 
-// 初期ターゲット指（メリーさんの羊 第1音: 中指 3 ミ）の設定
+// 初回オーディオ開始バナーのクリックイベント
+const audioStartBanner = document.getElementById("audio-start-banner");
+if (audioStartBanner) {
+  audioStartBanner.addEventListener("click", () => {
+    ensureAudioContext();
+    playTapSound("D4", false); // D4トーンで確認発音
+  });
+}
+
+// 初期ターゲット指（彼こそが海賊 第1音: 人差し指 2 レ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
 
