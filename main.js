@@ -1727,7 +1727,11 @@ function drawRawHandLandmarks(results) {
     lostFrames++;
     // 3フレーム以内（約50ms）の一時的ロストであれば直前の平滑化座標で描画を維持し、画面の点滅・ジャンプを防止
     if (lostFrames <= MAX_LOST_FRAMES && hasValidSmoothedLandmarks) {
-      // 直前フレームの座標をそのまま使用して継続描画
+      // 直前フレームの平滑化座標でフィルターを現在タイムスタンプ（now）で空回し更新し、復帰時のdt拡大による速度微分スパイクを防止
+      for (let i = 0; i < 21; i++) {
+        const pt = smoothedLandmarksPool[i];
+        landmarkFilters[i].filter(pt.x, pt.y, now, pt);
+      }
     } else {
       if (isDebugPanelVisible) {
         handsCount.textContent = "0";
@@ -1841,19 +1845,19 @@ function drawRawHandLandmarks(results) {
   currentTip.x = smoothTip.x;
   currentTip.y = smoothTip.y;
 
-  // 手首（Landmark 0: Wrist）と対象指の付け根（baseIdx）間の3D距離 L（手の基準長）
-  const baseLm = landmarks[fingerConfig.baseIdx];
-  const wristLm = landmarks[0];
-  const dx0base = baseLm.x - wristLm.x;
-  const dy0base = baseLm.y - wristLm.y;
-  const dz0base = (baseLm.z ?? 0) - (wristLm.z ?? 0);
-  const L = Math.hypot(dx0base, dy0base, dz0base) || 0.001;
+  // 手首（Landmark 0: Wrist）と対象指の付け根（baseIdx）間の平滑化2Dピクセル距離（手の基準長）
+  // ※生のlandmarksやジッターの大きいz深度を完全撤去し、平滑化済み2D座標のみを用いて算出
+  const smoothWrist = smoothedLandmarks[0];
+  const smoothBaseLm = smoothedLandmarks[fingerConfig.baseIdx];
+  const baseDistPx = Math.hypot(smoothBaseLm.x - smoothWrist.x, smoothBaseLm.y - smoothWrist.y);
+  // 画面高の5%を下回らないよう安全最小値を設定して分母微小化スパイクを防止
+  const safeBaseDistPx = Math.max(baseDistPx, height * 0.05);
 
   // 対象指の基準点ピクセル座標（smoothP2 または smoothP1）
   const smoothBase = (fingerConfig.baseIdx === fingerConfig.p1Idx) ? smoothP1 : smoothP2;
 
-  // 平滑化座標に基づく安定した相対変位 ry
-  const currentRy = (smoothTip.y - smoothBase.y) / (height * L);
+  // 完全平滑化・2Dピクセル比に基づく安定した相対変位 ry
+  const currentRy = (smoothTip.y - smoothBase.y) / safeBaseDistPx;
 
   // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
   const targetColor = getTargetFingerColor(currentSongStep);
