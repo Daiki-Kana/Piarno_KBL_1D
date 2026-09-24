@@ -30,6 +30,7 @@ const csvFileInput = document.getElementById("csv-file-input");
 const testSoundBtn = document.getElementById("test-sound-btn");
 const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
+const songProgressBadge = document.getElementById("song-progress-badge");
 const debugPanel = document.getElementById("debug-panel");
 
 // デバッグHUDの表示状態フラグ（非表示時は毎フレームのDOM書き込み・文字列演算をスキップ）
@@ -121,7 +122,8 @@ function initPianoSampler() {
         A7: "A7.mp3",
         C8: "C8.mp3"
       },
-      release: 1.2,
+      // 同音連打（ミ・ミ、ド・ド等）時に音が不自然にチョップされず、自然なピアノの減衰・オーバーラップが持続するようリリースを拡張
+      release: 2.4,
       baseUrl: "https://tonejs.github.io/audio/salamander/",
       onload: () => {
         isSamplerLoaded = true;
@@ -199,14 +201,15 @@ function playSynthFallback(freq = 523.25) {
 
   masterGain.gain.setValueAtTime(0.001, now);
   masterGain.gain.linearRampToValueAtTime(0.65, now + 0.003);
-  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+  // 同音連打時にも音が急峻に切れず自然な余韻が重なるよう減衰時間を延長（0.26s -> 0.55s）
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
 
   masterGain.connect(ctx.destination);
 
   oscBase.start(now);
   oscHarmonic.start(now);
-  oscBase.stop(now + 0.27);
-  oscHarmonic.stop(now + 0.27);
+  oscBase.stop(now + 0.56);
+  oscHarmonic.stop(now + 0.56);
 }
 
 /**
@@ -581,6 +584,40 @@ export function startCountdown(callback) {
   }, 1000);
 }
 
+// 完走クリア演出の状態管理（クリア演出中は打鍵認識を一時停止）
+export let isClearing = false;
+let clearTimerId = null;
+
+/**
+ * 完走時の白黒ミニマルクリア通知のフェード表示（約1.5秒間）
+ * @param {Function} onComplete フェードアウト完了後のコールバック
+ */
+export function showClearNotification(onComplete) {
+  const overlay = document.getElementById("clear-overlay");
+  if (!overlay) {
+    if (onComplete) onComplete();
+    return;
+  }
+
+  isClearing = true;
+  overlay.classList.remove("hidden");
+  // 強制リフローまたは微小ディレイでCSS opacity トランジションを確実に開始
+  requestAnimationFrame(() => {
+    overlay.classList.add("show");
+  });
+
+  if (clearTimerId) clearTimeout(clearTimerId);
+
+  // 約1.5秒間シンプルにフェード表示した後、フェードアウトしてループ復帰
+  clearTimerId = setTimeout(() => {
+    overlay.classList.remove("show");
+    setTimeout(() => {
+      overlay.classList.add("hidden");
+      isClearing = false;
+      if (onComplete) onComplete();
+    }, 300); // CSSのtransition 0.3s完了後にhidden化
+  }, 1500);
+}
 
 /**
  * 楽曲の切り替え
@@ -588,6 +625,19 @@ export function startCountdown(callback) {
  */
 export function selectSong(songId) {
   if (!SONGS[songId]) return;
+
+  // クリア演出中であればタイマーとオーバーレイをリセット
+  if (clearTimerId) {
+    clearTimeout(clearTimerId);
+    clearTimerId = null;
+  }
+  isClearing = false;
+  const clearOverlay = document.getElementById("clear-overlay");
+  if (clearOverlay) {
+    clearOverlay.classList.remove("show");
+    clearOverlay.classList.add("hidden");
+  }
+
   currentSongId = songId;
   currentSequence = SONGS[songId].sequence;
   currentSongStep = 0;
@@ -600,7 +650,6 @@ export function selectSong(songId) {
   // メニューを閉じる
   const menu = document.getElementById("song-select-menu");
   if (menu) menu.classList.add("hidden");
-
 
   // 1音目のターゲット指をセット＆ガイドUI再描画
   setTargetFinger(currentSequence[0].fingerKey);
@@ -718,6 +767,10 @@ export function renderSongGuideUI() {
   }
   if (targetTapProgress) {
     targetTapProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
+  }
+  // 画面上部：ミニマル進捗バッジ（白黒ミニマル）
+  if (songProgressBadge) {
+    songProgressBadge.textContent = `${currentItem.step} / ${currentSequence.length}`;
   }
 }
 
@@ -1747,8 +1800,8 @@ function drawRawHandLandmarks(results) {
   const targetColor = getTargetFingerColor(currentSongStep);
 
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
-  // カウントダウン中（3・2・1）は打鍵認識を一時停止して演奏準備に専念
-  if (tapState === "IDLE" && !isCountingDown) {
+  // カウントダウン中（3・2・1）および完走クリア演出中は打鍵認識を一時停止
+  if (tapState === "IDLE" && !isCountingDown && !isClearing) {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
@@ -1773,23 +1826,37 @@ function drawRawHandLandmarks(results) {
       const fromTipX = smoothTip.x;
       const fromTipY = smoothTip.y;
 
-      // 次の音符へステップ進行
-      currentSongStep = (currentSongStep + 1) % currentSequence.length;
-      const nextTarget = currentSequence[currentSongStep];
-      const nextColor = getTargetFingerColor(currentSongStep);
+      const isLastStep = currentSongStep === currentSequence.length - 1;
 
-      // 次の指先座標（全点平滑化済み座標から取得してブレ・飛びをゼロに）
-      const nextFingerCfg = FINGER_CONFIGS[nextTarget.fingerKey] || fingerConfig;
-      const nextSmoothTip = smoothedLandmarks[nextFingerCfg.tipIdx];
-      const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
-      const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
+      if (isLastStep) {
+        // 完走時：白黒ミニマルクリア通知（約1.5秒間）を表示後、インデックス0（第1音）へ自動ループ復帰
+        console.log(`[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`);
+        showClearNotification(() => {
+          currentSongStep = 0;
+          const resetTarget = currentSequence[0];
+          setTargetFinger(resetTarget.fingerKey);
+          renderSongGuideUI();
+          console.log(`[SONG LOOP] 第1音 (${resetTarget.note} / ${resetTarget.fingerKey}) へリセット完了`);
+        });
+      } else {
+        // 通常進行：次の音符へステップ進行
+        currentSongStep = currentSongStep + 1;
+        const nextTarget = currentSequence[currentSongStep];
+        const nextColor = getTargetFingerColor(currentSongStep);
 
-      // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
-      spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
+        // 次の指先座標（全点平滑化済み座標から取得してブレ・飛びをゼロに）
+        const nextFingerCfg = FINGER_CONFIGS[nextTarget.fingerKey] || fingerConfig;
+        const nextSmoothTip = smoothedLandmarks[nextFingerCfg.tipIdx];
+        const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
+        const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
 
-      // 次のターゲット指へ自動切り替えとガイド更新
-      setTargetFinger(nextTarget.fingerKey);
-      renderSongGuideUI();
+        // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
+        spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
+
+        // 次のターゲット指へ自動切り替えとガイド更新
+        setTargetFinger(nextTarget.fingerKey);
+        renderSongGuideUI();
+      }
     }
   } else if (tapState === "TOUCHED") {
     // 指のリフト復帰（閾値を下回ったら待機状態へ）
