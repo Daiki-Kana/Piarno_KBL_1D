@@ -1714,20 +1714,43 @@ function schedulePredictLoop() {
   }
 }
 
-// 右手トラッキングロックの最大許容追従距離（正規化座標系：画面対角線/幅の約35%）
-// 1フレームで右手手首がこれ以上離れた位置にワープすることは物理的にあり得ないため、右手一時ロスト時の左手誤乗り換えを遮断
-const MAX_WRIST_TRACK_DISTANCE = 0.35;
+/**
+ * 手のひらナックルの幾何学的向き（2Dベクトル外積）による右手判定
+ * 手首(0)→人差し指付け根(5) と 手首(0)→小指付け根(17) の外積を計算
+ * 生カメラ画像（CSS scaleX(-1)反転前）において、手の甲が上（机面打鍵姿勢）の場合：
+ * - 物理的な右手: 人差し指(5)が右(+X)、小指(17)が左(-X) → cross < 0
+ * - 物理的な左手: 人差し指(5)が左(-X)、小指(17)が右(+X) → cross > 0
+ * @param {Array<object>} hand 手の全21ランドマーク配列
+ * @returns {boolean} 物理的な右手であれば true、左手であれば false
+ */
+function isAnatomicallyRightHand(hand) {
+  if (!hand || hand.length < 21) return false;
 
-// 生カメラ画像における右手存在上限X座標（正規化座標系）
-// ※Webカメラ生映像（CSS scaleX(-1)反転前）では、正面の演奏者の右手は画面左側（xが小さい領域）に映る
-// 画面右側（x > 0.65＝演奏者の左側領域）にある手は物理的な左手であるため、単独手であっても除外する
-const MAX_RIGHT_HAND_X = 0.65;
+  const p0 = hand[0];   // 手首 (WRIST)
+  const p5 = hand[5];   // 人差し指付け根 (INDEX_FINGER_MCP)
+  const p17 = hand[17]; // 小指付け根 (PINKY_MCP)
+
+  const vIndexX = p5.x - p0.x;
+  const vIndexY = p5.y - p0.y;
+  const vPinkyX = p17.x - p0.x;
+  const vPinkyY = p17.y - p0.y;
+
+  // 2D外積（Cross Product）
+  const cross = vIndexX * vPinkyY - vIndexY * vPinkyX;
+
+  // 生カメラ画像で机面打鍵ポジション（手の甲が上）のとき、右手は cross < 0 となる
+  // 微小なノイズによる誤判定を防ぐため、ごく僅かな負の閾値 (-0.0005) を設定
+  return cross < -0.0005;
+}
+
+// 画面左端のセーフティ境界（生カメラ画像で x < 0.05 等の極端な欠損フレームのみ除外）
+const MIN_SAFETY_X = 0.02;
 
 /**
- * 位置連続性（Nearest-Neighbor）に基づく右手セレクター
- * ※注意：MediaPipeはCSS反転前の「生カメラ映像」を処理するため、
- * 正面に座る演奏者の物理的な右手は生画像上では「左側（x座標が小さい領域）」に映ります。
- * 追従リミッターと左手除外判定により、右手の一時ロスト時の左手乗り換え・左手誤ロックを完全防止
+ * 解剖学的判定（ナックル外積）と位置連続性に基づく右手セレクター
+ * - 画面内の手から左手を解剖学的外積（cross > 0）により100%除外
+ * - 右手が画面から消えた場合は左手に乗り換えず、右手が戻るまで待機（null返却）
+ * - 画面中央境界のハードカットは行わず、演奏領域全体の自由な打鍵を許容
  * @param {object} results MediaPipe HandLandmarkerの検出結果
  * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
  */
@@ -1736,63 +1759,58 @@ function selectRightHandLandmarks(results) {
     return null;
   }
 
-  const hands = results.landmarks;
+  // 1. 検出された全手の中から、ナックル幾何学外積で「右手」と判定される手のみを抽出
+  // （左手は cross > 0 となるためここで100%完全に排除され、候補にすら残らない）
+  const rightHandCandidates = results.landmarks.filter((hand) => {
+    if (!isAnatomicallyRightHand(hand)) return false;
+    // 画面端スレスレの欠損セーフティ
+    const wrist = hand[0];
+    if (wrist.x < MIN_SAFETY_X) return false;
+    return true;
+  });
 
-  // 1. 追従状態（lastTrackedWrist が存在する場合）：
-  // 検出された全手の中から lastTrackedWrist とのユークリッド距離が最小の手を探索
+  // 画面内に右手が存在しない場合（左手のみ、または右手ロスト中）：
+  // 左手に絶対に乗り換えず、右手が画面に戻るまで待機（null）
+  if (rightHandCandidates.length === 0) {
+    return null;
+  }
+
+  // 2. 右手候補が1つの場合：唯一の右手として即座に採用
+  if (rightHandCandidates.length === 1) {
+    return rightHandCandidates[0];
+  }
+
+  // 3. 右手候補が複数検出された場合（ノイズ等）：
   if (lastTrackedWrist) {
-    let closestHand = hands[0];
+    // 前フレームの右手位置に最も近い候補を選択
+    let closestHand = rightHandCandidates[0];
     let minDistance = Infinity;
 
-    for (let i = 0; i < hands.length; i++) {
-      const hand = hands[i];
-      const wrist = hand[0]; // 手首 (Landmark 0)
+    for (let i = 0; i < rightHandCandidates.length; i++) {
+      const hand = rightHandCandidates[i];
+      const wrist = hand[0];
       const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
       if (dist < minDistance) {
         minDistance = dist;
         closestHand = hand;
       }
     }
-
-    // スイッチ防止リミッター：
-    // 最も近い手であっても最大許容距離（MAX_WRIST_TRACK_DISTANCE）を超えている場合、
-    // 右手が一時ロストして画面内に左手のみが残った状況と判定し、左手への誤乗り換えを遮断して null を返す
-    if (minDistance > MAX_WRIST_TRACK_DISTANCE) {
-      return null;
-    }
-
     return closestHand;
-  }
+  } else {
+    // 未追従時は、生カメラ画像でより左側（x座標が最小＝正面カメラにおける右手側）を選択
+    let leftmostHand = rightHandCandidates[0];
+    let minX = Infinity;
 
-  // 2. 未追従状態（起動時または完全ロスト後の初回検出時）：
-  if (hands.length === 1) {
-    const wrist = hands[0][0];
-    // 左手単独時の誤ロック防止：生画像で明らかに右側（x > MAX_RIGHT_HAND_X ＝ 演奏者の左手側）にある手は左手として除外
-    if (wrist.x > MAX_RIGHT_HAND_X) {
-      return null;
+    for (let i = 0; i < rightHandCandidates.length; i++) {
+      const hand = rightHandCandidates[i];
+      const wrist = hand[0];
+      if (wrist.x < minX) {
+        minX = wrist.x;
+        leftmostHand = hand;
+      }
     }
-    return hands[0];
-  }
-
-  // 複数手検出時は、生カメラ画像において最も左側（x座標が最小＝演奏者の物理的な右手）の手を選択
-  let leftmostHand = null;
-  let minX = Infinity;
-
-  for (let i = 0; i < hands.length; i++) {
-    const hand = hands[i];
-    const wrist = hand[0];
-    if (wrist.x < minX) {
-      minX = wrist.x;
-      leftmostHand = hand;
-    }
-  }
-
-  // 最も左側にある手であっても、生画像右端（x > MAX_RIGHT_HAND_X）にある場合は右手とみなさない
-  if (leftmostHand && leftmostHand[0].x <= MAX_RIGHT_HAND_X) {
     return leftmostHand;
   }
-
-  return null;
 }
 
 /**
