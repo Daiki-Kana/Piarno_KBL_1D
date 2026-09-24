@@ -714,6 +714,9 @@ const MAX_LOST_FRAMES = 3;
 let hasValidSmoothedLandmarks = false;
 let lastRawLandmarks = null;
 
+// 右手トラッキングロック用：追従中の右手手首（Landmark 0）の正規化座標
+let lastTrackedWrist = null;
+
 // 手の骨格コネクション定義（全21ランドマーク間の接続ペア [startIdx, endIdx]）
 const HAND_CONNECTIONS = [
   // 手のひら
@@ -1449,7 +1452,7 @@ async function initHandLandmarker() {
 
   for (const modelPath of modelPaths) {
     try {
-      // 60fps安定化のため検出対象手を1つに限定して推論時間を最小化
+      // 画面内に左手が存在していても右手を見落とさず確実に追従・ロックするため両手（最大2手）検出を有効化
       // 水平ローアングルでの打鍵時（机面接触・影）の再検出ループを防ぐため追従閾値を適正化
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
@@ -1457,7 +1460,7 @@ async function initHandLandmarker() {
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        numHands: 1,
+        numHands: 2,
         minHandDetectionConfidence: 0.4,
         minHandPresenceConfidence: 0.4,
         minTrackingConfidence: 0.3
@@ -1473,7 +1476,7 @@ async function initHandLandmarker() {
             delegate: "CPU"
           },
           runningMode: "VIDEO",
-          numHands: 1,
+          numHands: 2,
           minHandDetectionConfidence: 0.4,
           minHandPresenceConfidence: 0.4,
           minTrackingConfidence: 0.3
@@ -1712,6 +1715,59 @@ function schedulePredictLoop() {
 }
 
 /**
+ * 位置連続性（Nearest-Neighbor）に基づく右手セレクター
+ * 検出された複数の手（両手）の中から右手のみを特定し、左手データを完全に破棄する
+ * @param {object} results MediaPipe HandLandmarkerの検出結果
+ * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
+ */
+function selectRightHandLandmarks(results) {
+  if (!results || !results.landmarks || results.landmarks.length === 0) {
+    return null;
+  }
+
+  const hands = results.landmarks;
+
+  // 検出された手が1つの場合
+  if (hands.length === 1) {
+    return hands[0];
+  }
+
+  // 検出された手が2つ以上の場合
+  if (lastTrackedWrist) {
+    // 1. 前フレームの右手位置（lastTrackedWrist）が存在する場合：
+    // 各手の手首位置（Landmark 0）とのユークリッド距離が最も近い手を右手として選択・継続追従
+    let closestHand = hands[0];
+    let minDistance = Infinity;
+
+    for (let i = 0; i < hands.length; i++) {
+      const hand = hands[i];
+      const wrist = hand[0]; // 手首
+      const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestHand = hand;
+      }
+    }
+    return closestHand;
+  } else {
+    // 2. 未追従状態（起動時や完全ロスト復帰初フレームで2手検出時）：
+    // 自撮り鏡像配置において右手側となる「画面X座標が大きい（右側にある）手」を手首座標で比較して初期ロック
+    let rightmostHand = hands[0];
+    let maxX = -Infinity;
+
+    for (let i = 0; i < hands.length; i++) {
+      const hand = hands[i];
+      const wrist = hand[0];
+      if (wrist.x > maxX) {
+        maxX = wrist.x;
+        rightmostHand = hand;
+      }
+    }
+    return rightmostHand;
+  }
+}
+
+/**
  * 手の全21ランドマークの適応平滑化描画、打鍵・リフト用特徴量の算出
  * 手首・手のひら・全指先を独立した 1 Euro Filter で常時平滑化し、ジッターと飛びを完全排除
  * @param {object} results
@@ -1725,7 +1781,9 @@ function drawRawHandLandmarks(results) {
   const height = canvas.height;
   const now = performance.now();
 
-  const hasHands = results && results.landmarks && results.landmarks.length > 0;
+  // 位置連続性による右手セレクターを実行（左手は完全除外）
+  const selectedRightHand = selectRightHandLandmarks(results);
+  const hasHands = selectedRightHand !== null;
 
   if (!hasHands) {
     lostFrames++;
@@ -1744,10 +1802,11 @@ function drawRawHandLandmarks(results) {
         tapState = "IDLE";
         updateStateHud("IDLE", false);
       }
-      // 完全に画角から外れた場合のみフィルターをリセット
+      // 完全に画角から外れた場合のみフィルターと追従位置をリセット
       landmarkFilters.forEach((f) => f.reset());
       hasValidSmoothedLandmarks = false;
       lastRawLandmarks = null;
+      lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       resetDebugMetrics();
       updateAndDrawTapEffects(canvasCtx);
       return;
@@ -1757,16 +1816,20 @@ function drawRawHandLandmarks(results) {
   }
 
   if (isDebugPanelVisible) {
-    handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
+    const totalDetected = results && results.landmarks ? results.landmarks.length : 0;
+    handsCount.textContent = hasHands ? `${totalDetected} (右手ロック)` : "1 (補間)";
   }
 
   // 画面外（完全未検出状態）からの再出現初フレームかどうかを判定
   const isReacquired = hasHands && !hasValidSmoothedLandmarks;
 
-  // メインの手のランドマーク生座標（numHands: 1 で検出された手を右手演奏対象として直接追従）
-  const landmarks = hasHands ? results.landmarks[0] : lastRawLandmarks;
+  // メインの手のランドマーク生座標（右手セレクターで選択された右手のみを供給・左手データは完全破棄）
+  const landmarks = hasHands ? selectedRightHand : lastRawLandmarks;
   if (!landmarks) return;
   lastRawLandmarks = landmarks;
+
+  // 追従中の右手手首の生正規化座標で lastTrackedWrist を毎フレーム更新
+  lastTrackedWrist = { x: landmarks[0].x, y: landmarks[0].y };
 
   // 全21関節点の独立平滑化（オブジェクトプールを再利用して毎フレームの新規生成・破棄によるGCスパイクを完全排除）
   if (hasHands) {
