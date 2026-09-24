@@ -518,27 +518,21 @@ export const PIRATES_SEQUENCE = [
   { step: 16, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: "D3" }
 ];
 
-// 演奏曲リスト
+// 演奏曲リスト（自分のペースで1音ずつ進めるステップ演奏）
 export const SONGS = {
   pirates: {
     id: "pirates",
     title: "彼こそが海賊",
-    bpm: 76,
-    totalPhrases: 4,
     sequence: PIRATES_SEQUENCE
   },
   mary: {
     id: "mary",
     title: "メリーさんの羊",
-    bpm: 100,
-    totalPhrases: 4,
     sequence: MARY_LAMB_SEQUENCE
   },
   saints: {
     id: "saints",
     title: "聖者の行進",
-    bpm: 116,
-    totalPhrases: 3,
     sequence: SAINTS_MARCH_SEQUENCE
   }
 };
@@ -650,6 +644,22 @@ const MAX_LOST_FRAMES = 3;
 let hasValidSmoothedLandmarks = false;
 let lastRawLandmarks = null;
 
+// 手の骨格コネクション定義（全21ランドマーク間の接続ペア [startIdx, endIdx]）
+const HAND_CONNECTIONS = [
+  // 手のひら
+  [0, 1], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17],
+  // 親指
+  [1, 2], [2, 3], [3, 4],
+  // 人差し指（背景薄表示）
+  [5, 6], [6, 7], [7, 8],
+  // 中指
+  [9, 10], [10, 11], [11, 12],
+  // 薬指
+  [13, 14], [14, 15], [15, 16],
+  // 小指
+  [17, 18], [18, 19], [19, 20]
+];
+
 // 指ごとの対象外骨格接続線のキャッシュ（毎フレームのfilter処理・配列アロケーションを完全排除）
 const cachedOtherConnections = {};
 export let currentOtherConnections = [];
@@ -665,7 +675,7 @@ export function updateCachedConnections(fingerKey) {
   }
   const cfg = FINGER_CONFIGS[fingerKey] || FINGER_CONFIGS.THUMB;
   const targetIndices = cfg.indices;
-  const connections = HandLandmarker.HAND_CONNECTIONS.filter(
+  const connections = HAND_CONNECTIONS.filter(
     ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
   );
   cachedOtherConnections[fingerKey] = connections;
@@ -979,21 +989,6 @@ export function applyFingerThreshold(fingerKey) {
   }
 }
 
-// 手の骨格コネクション定義（全21ランドマーク間の接続）
-const HAND_CONNECTIONS = [
-  // 手のひら
-  [0, 1], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17],
-  // 親指
-  [1, 2], [2, 3], [3, 4],
-  // 人差し指（背景薄表示）
-  [5, 6], [6, 7], [7, 8],
-  // 中指
-  [9, 10], [10, 11], [11, 12],
-  // 薬指
-  [13, 14], [14, 15], [15, 16],
-  // 小指
-  [17, 18], [18, 19], [19, 20]
-];
 
 /**
  * CSVステータス表示の更新
@@ -2027,8 +2022,12 @@ function showError(msg) {
 video.addEventListener("resize", updateCanvasResolution);
 window.addEventListener("resize", updateCanvasResolution);
 
-// DOM読み込み完了時に自動実行
-window.addEventListener("DOMContentLoaded", init);
+// DOM読み込み完了時に自動実行（既に完了している場合は即時実行）
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
 
 // ブラウザのAutoplay Policy対応（初回クリックまたはタップでAudioContextを確実にresume）
 ["pointerdown", "touchstart", "click", "keydown"].forEach((evt) => {
