@@ -1854,7 +1854,6 @@ function drawRawHandLandmarks(results) {
       lastRawLandmarks = null;
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       resetDebugMetrics();
-      updateAndDrawTapEffects(canvasCtx);
       return;
     }
   } else {
@@ -1896,34 +1895,7 @@ function drawRawHandLandmarks(results) {
   }
   const smoothedLandmarks = smoothedLandmarksPool;
 
-  // 1. 対象指以外の骨格（手のひら・他の指すべて）を事前キャッシュされた接続線で描画（毎フレームのfilter処理廃止）
-  const otherConnections = currentOtherConnections;
-
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-  canvasCtx.lineWidth = 1;
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
-
-  otherConnections.forEach(([startIdx, endIdx]) => {
-    const p1 = smoothedLandmarks[startIdx];
-    const p2 = smoothedLandmarks[endIdx];
-
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(p1.x, p1.y);
-    canvasCtx.lineTo(p2.x, p2.y);
-    canvasCtx.stroke();
-  });
-
-  // 対象指以外の関節点（極小薄グレー）
-  smoothedLandmarks.forEach((pt, idx) => {
-    if (targetIndices.includes(idx)) return;
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
-    canvasCtx.fill();
-  });
-
-  // 2. 選択中指の平滑化ピクセル座標
+  // 1. 選択中指の平滑化ピクセル座標
   const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
   const smoothP2 = smoothedLandmarks[fingerConfig.p2Idx];
   const smoothP3 = smoothedLandmarks[fingerConfig.p3Idx];
@@ -2001,9 +1973,6 @@ function drawRawHandLandmarks(results) {
         const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
         const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
 
-        // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
-        spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
-
         // 次のターゲット指へ自動切り替えとガイド更新
         setTargetFinger(nextTarget.fingerKey);
         renderSongGuideUI();
@@ -2020,117 +1989,32 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 指定された指の骨格描画（shadowBlurを撤去し、多層ストロークで高速・高鮮明に描画）
-  canvasCtx.save();
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
-
-  // 共通骨格パス生成
-  const drawBonePath = () => {
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-    canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-    canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-    canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  };
-
-  // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
-  canvasCtx.strokeStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
-  canvasCtx.lineWidth = 12.0;
-  drawBonePath();
-  canvasCtx.stroke();
-
-  // 層2: 中間メインネオンライン（太さ 6.0px、高彩度ネオンカラー）
-  canvasCtx.strokeStyle = targetColor.stroke;
-  canvasCtx.lineWidth = 6.0;
-  drawBonePath();
-  canvasCtx.stroke();
-
-  // 層3: 内側高輝度ホワイトコアライン（太さ 2.4px：芯が白く発光して立体感・視認性を極大化）
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-  canvasCtx.lineWidth = 2.4;
-  drawBonePath();
-  canvasCtx.stroke();
-
-  // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
-  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
-    // 層1: 外側ハロー
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
-    canvasCtx.fill();
-
-    // 層2: メインカラードット
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 5.0, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.fill;
-    canvasCtx.fill();
-
-    // 層3: 内側白熱コア
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2.4, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "#ffffff";
-    canvasCtx.fill();
-  });
-
-  // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
+  // 5. エフェクト負荷削減：マーカーは指定指先（TIP）のみに丸で表示
   drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
-  canvasCtx.restore();
-
-  // 7. 演奏時エフェクト（彗星ビーム）のアニメーション更新・描画
-  updateAndDrawTapEffects(canvasCtx);
 }
 
 /**
- * 対象指先端（TIP）のターゲットマーク描画（shadowBlur全廃・多層二重発光リング＋白熱コア）
- * @param {number} x
- * @param {number} y
- * @param {object} color
+ * 対象指先端（TIP）のシンプルな丸マーカー描画（エフェクト負荷を削減したクリーンな丸表示）
+ * @param {number} x 指先X座標
+ * @param {number} y 指先Y座標
+ * @param {object} color ターゲット色情報
  */
 function drawTipTargetMark(x, y, color) {
-  const strokeColor = color?.stroke || "rgba(0, 229, 255, 0.95)";
-  const haloColor = color?.halo || "rgba(0, 229, 255, 0.25)";
-  const accentColor = color?.accent || "rgba(0, 229, 255, 0.65)";
   const fillColor = color?.fill || "#00e5ff";
 
   canvasCtx.save();
 
-  // 外側の極太発光メインリング（多層化：太ハロー＋鮮明コア線）
-  // 層1: 外側発光ハローリング（半径13px、線幅 7.5px）
+  // 外枠リング（白、線幅 2.5px、半径 14px）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = haloColor;
-  canvasCtx.lineWidth = 7.5;
+  canvasCtx.arc(x, y, 14, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  canvasCtx.lineWidth = 2.5;
   canvasCtx.stroke();
 
-  // 層2: 外側メインリング（半径13px、線幅 2.8px）
-  canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = strokeColor;
-  canvasCtx.lineWidth = 2.8;
-  canvasCtx.stroke();
-
-  // 内側の補助リング（半径8px、線幅 1.8px、事前計算accentColorで正規表現全廃）
+  // 中心ターゲット丸（指先カラー塗りつぶし、半径 8px）
   canvasCtx.beginPath();
   canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = accentColor;
-  canvasCtx.lineWidth = 1.8;
-  canvasCtx.stroke();
-
-  // 中心発光ドット（多層描画: 外輪ハロー 半径 7.0px + メイン 半径 4.6px + 白熱コア 半径 2.4px）
-  canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 7.0, 0, 2 * Math.PI);
-  canvasCtx.fillStyle = haloColor;
-  canvasCtx.fill();
-
-  canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 4.6, 0, 2 * Math.PI);
   canvasCtx.fillStyle = fillColor;
-  canvasCtx.fill();
-
-  canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 2.4, 0, 2 * Math.PI);
-  canvasCtx.fillStyle = "#ffffff";
   canvasCtx.fill();
 
   canvasCtx.restore();
