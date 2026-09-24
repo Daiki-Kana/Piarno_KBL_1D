@@ -322,12 +322,14 @@ class OneEuroFilter {
 }
 
 /**
- * 2D関節座標用 1 Euro Filter
+ * 2D関節座標用 1 Euro Filter（物理速度リミッター付き）
  */
 class PointFilter {
-  constructor(minCutoff = 1.2, beta = 0.008) {
+  constructor(minCutoff = 1.2, beta = 0.008, maxStep = 40.0) {
     this.xf = new OneEuroFilter(minCutoff, beta);
     this.yf = new OneEuroFilter(minCutoff, beta);
+    // 人間の指の物理限界を超える1フレームあたりの最大許容変位ピクセル数（クランプリミッター）
+    this.maxStep = maxStep;
   }
 
   reset() {
@@ -336,8 +338,24 @@ class PointFilter {
   }
 
   filter(x, y, timestamp, out = null) {
-    const fx = this.xf.filter(x, timestamp);
-    const fy = this.yf.filter(y, timestamp);
+    let clampedX = x;
+    let clampedY = y;
+
+    // 前回のフィルター出力座標が存在する場合、1フレームあたりの移動変位を物理許容限界（maxStep）内にクランプ
+    if (this.xf.xPrev !== null && this.yf.xPrev !== null) {
+      const dx = x - this.xf.xPrev;
+      const dy = y - this.yf.xPrev;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > this.maxStep) {
+        const ratio = this.maxStep / dist;
+        clampedX = this.xf.xPrev + dx * ratio;
+        clampedY = this.yf.xPrev + dy * ratio;
+      }
+    }
+
+    const fx = this.xf.filter(clampedX, timestamp);
+    const fy = this.yf.filter(clampedY, timestamp);
     if (out) {
       out.x = fx;
       out.y = fy;
@@ -1408,7 +1426,7 @@ async function initHandLandmarker() {
 
   for (const modelPath of modelPaths) {
     try {
-      // 60fps安定化のため検出対象手を1つに限定して推論時間を最小化
+      // 右手と左手を正確に識別し、左手を完全に除外して「右手専用」にするため numHands: 2 に設定
       // 水平ローアングルでの打鍵時（机面接触・影）の再検出ループを防ぐため追従閾値を適正化
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
@@ -1416,10 +1434,10 @@ async function initHandLandmarker() {
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        numHands: 1,
-        minHandDetectionConfidence: 0.4,
-        minHandPresenceConfidence: 0.4,
-        minTrackingConfidence: 0.3
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
       });
       loaded = true;
       break;
@@ -1432,10 +1450,10 @@ async function initHandLandmarker() {
             delegate: "CPU"
           },
           runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.4,
-          minHandPresenceConfidence: 0.4,
-          minTrackingConfidence: 0.3
+          numHands: 2,
+          minHandDetectionConfidence: 0.5,
+          minHandPresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5
         });
         loaded = true;
         break;
@@ -1684,7 +1702,26 @@ function drawRawHandLandmarks(results) {
   const height = canvas.height;
   const now = performance.now();
 
-  const hasHands = results && results.landmarks && results.landmarks.length > 0;
+  // 検出された手の中から「右手（Right hand）」のみを厳密に抽出（左手は完全除外）
+  let rightHandIdx = -1;
+  if (results && results.landmarks && results.landmarks.length > 0) {
+    if (results.handednesses && results.handednesses.length > 0) {
+      for (let i = 0; i < results.landmarks.length; i++) {
+        const hList = results.handednesses[i];
+        const hInfo = Array.isArray(hList) ? hList[0] : hList;
+        const name = (hInfo?.categoryName || hInfo?.displayName || "").toLowerCase();
+        if (name === "right") {
+          rightHandIdx = i;
+          break;
+        }
+      }
+    } else {
+      // handedness情報が取得できない場合の安全フォールバック
+      rightHandIdx = 0;
+    }
+  }
+
+  const hasHands = (rightHandIdx !== -1);
 
   if (!hasHands) {
     lostFrames++;
@@ -1712,22 +1749,44 @@ function drawRawHandLandmarks(results) {
   }
 
   if (isDebugPanelVisible) {
-    handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
+    const rawHandsCount = results?.landmarks?.length || 0;
+    handsCount.textContent = hasHands ? "1 (右手)" : (rawHandsCount > 0 ? "0 (左手除外)" : "0");
   }
 
-  // メインの手のランドマーク生座標
-  let landmarks = hasHands ? results.landmarks[0] : lastRawLandmarks;
+  // メインの手のランドマーク生座標（右手のみを採用）
+  let landmarks = hasHands ? results.landmarks[rightHandIdx] : lastRawLandmarks;
   if (!landmarks) return;
 
-  // 1フレームでの極端な座標ジャンプ（Palm Detection誤検出や左右反転ワープ）の遮断ガード
+  // 1フレームでの極端な座標ジャンプ（手首ワープ、全5指先端の急激なワープ）の遮断ガード
   let isAnomalousJump = false;
   if (hasHands && lastRawLandmarks) {
+    // 1. 手首（Landmark 0: Wrist）の移動距離チェック（画面幅の12%超で遮断）
     const rawWrist = landmarks[0];
     const prevWrist = lastRawLandmarks[0];
-    const jumpDist = Math.hypot((rawWrist.x - prevWrist.x) * width, (rawWrist.y - prevWrist.y) * height);
-    // 1フレーム（約16ms）で画面幅の20%以上手首がワープした場合はAIの誤検出フレームとして直前座標を維持
-    if (jumpDist > width * 0.20) {
+    const wristJumpDist = Math.hypot((rawWrist.x - prevWrist.x) * width, (rawWrist.y - prevWrist.y) * height);
+    if (wristJumpDist > width * 0.12) {
       isAnomalousJump = true;
+    }
+
+    // 2. 全5指の先端（TIP: 4親指, 8人差し指, 12中指, 16薬指, 20小指）の急激なワープチェック（画面幅の8%超で遮断）
+    if (!isAnomalousJump) {
+      const tipIndices = [4, 8, 12, 16, 20];
+      const maxTipAllowedDist = width * 0.08; // 画面幅の8%（1280px時 約102px）
+      for (let k = 0; k < tipIndices.length; k++) {
+        const idx = tipIndices[k];
+        const rawTip = landmarks[idx];
+        const prevTip = lastRawLandmarks[idx];
+        if (rawTip && prevTip) {
+          const dist = Math.hypot((rawTip.x - prevTip.x) * width, (rawTip.y - prevTip.y) * height);
+          if (dist > maxTipAllowedDist) {
+            isAnomalousJump = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (isAnomalousJump) {
       landmarks = lastRawLandmarks;
     }
   }
