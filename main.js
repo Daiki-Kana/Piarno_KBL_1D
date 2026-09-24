@@ -1718,11 +1718,15 @@ function schedulePredictLoop() {
 // 1フレームで右手手首がこれ以上離れた位置にワープすることは物理的にあり得ないため、右手一時ロスト時の左手誤乗り換えを遮断
 const MAX_WRIST_TRACK_DISTANCE = 0.35;
 
-// 自撮り鏡像配置における右手存在下限X座標（正規化座標系：画面左45%未満にある単独手は左手として除外）
-const MIN_RIGHT_HAND_X = 0.45;
+// 生カメラ画像における右手存在上限X座標（正規化座標系）
+// ※Webカメラ生映像（CSS scaleX(-1)反転前）では、正面の演奏者の右手は画面左側（xが小さい領域）に映る
+// 画面右側（x > 0.65＝演奏者の左側領域）にある手は物理的な左手であるため、単独手であっても除外する
+const MAX_RIGHT_HAND_X = 0.65;
 
 /**
  * 位置連続性（Nearest-Neighbor）に基づく右手セレクター
+ * ※注意：MediaPipeはCSS反転前の「生カメラ映像」を処理するため、
+ * 正面に座る演奏者の物理的な右手は生画像上では「左側（x座標が小さい領域）」に映ります。
  * 追従リミッターと左手除外判定により、右手の一時ロスト時の左手乗り換え・左手誤ロックを完全防止
  * @param {object} results MediaPipe HandLandmarkerの検出結果
  * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
@@ -1763,29 +1767,29 @@ function selectRightHandLandmarks(results) {
   // 2. 未追従状態（起動時または完全ロスト後の初回検出時）：
   if (hands.length === 1) {
     const wrist = hands[0][0];
-    // 左手単独時の誤ロック防止：手首が明らかに画面左側（x < MIN_RIGHT_HAND_X）にある場合は左手と判定して除外
-    if (wrist.x < MIN_RIGHT_HAND_X) {
+    // 左手単独時の誤ロック防止：生画像で明らかに右側（x > MAX_RIGHT_HAND_X ＝ 演奏者の左手側）にある手は左手として除外
+    if (wrist.x > MAX_RIGHT_HAND_X) {
       return null;
     }
     return hands[0];
   }
 
-  // 複数手検出時は、自撮り鏡像配置において最も右側（x座標が大きい）の手を選択
-  let rightmostHand = null;
-  let maxX = -Infinity;
+  // 複数手検出時は、生カメラ画像において最も左側（x座標が最小＝演奏者の物理的な右手）の手を選択
+  let leftmostHand = null;
+  let minX = Infinity;
 
   for (let i = 0; i < hands.length; i++) {
     const hand = hands[i];
     const wrist = hand[0];
-    if (wrist.x > maxX) {
-      maxX = wrist.x;
-      rightmostHand = hand;
+    if (wrist.x < minX) {
+      minX = wrist.x;
+      leftmostHand = hand;
     }
   }
 
-  // 最も右側にある手であっても、画面左端にある場合は右手とみなさない
-  if (rightmostHand && rightmostHand[0].x >= MIN_RIGHT_HAND_X) {
-    return rightmostHand;
+  // 最も左側にある手であっても、生画像右端（x > MAX_RIGHT_HAND_X）にある場合は右手とみなさない
+  if (leftmostHand && leftmostHand[0].x <= MAX_RIGHT_HAND_X) {
+    return leftmostHand;
   }
 
   return null;
