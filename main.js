@@ -281,10 +281,10 @@ class OneEuroFilter {
     this.tPrev = null;
   }
 
-  reset() {
-    this.xPrev = null;
+  reset(x = null, timestamp = null) {
+    this.xPrev = x;
     this.dxPrev = 0;
-    this.tPrev = null;
+    this.tPrev = timestamp;
   }
 
   alpha(cutoff, dt) {
@@ -330,9 +330,29 @@ class PointFilter {
     this.yf = new OneEuroFilter(minCutoff, beta);
   }
 
-  reset() {
-    this.xf.reset();
-    this.yf.reset();
+  reset(x = null, y = null, timestamp = null) {
+    this.xf.reset(x, timestamp);
+    this.yf.reset(y, timestamp);
+  }
+
+  /**
+   * 過去座標からの引きずりをバイパスし、指定座標で即座にスナップ初期化
+   * @param {number} x
+   * @param {number} y
+   * @param {number} timestamp
+   * @param {object} out
+   */
+  snap(x, y, timestamp, out = null) {
+    this.reset(x, y, timestamp);
+    if (out) {
+      out.x = x;
+      out.y = y;
+      return out;
+    }
+    return {
+      x,
+      y
+    };
   }
 
   filter(x, y, timestamp, out = null) {
@@ -1719,6 +1739,9 @@ function drawRawHandLandmarks(results) {
     handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
   }
 
+  // 画面外（完全未検出状態）からの再出現初フレームかどうかを判定
+  const isReacquired = hasHands && !hasValidSmoothedLandmarks;
+
   // メインの手のランドマーク生座標（numHands: 1 で検出された手を右手演奏対象として直接追従）
   const landmarks = hasHands ? results.landmarks[0] : lastRawLandmarks;
   if (!landmarks) return;
@@ -1726,9 +1749,18 @@ function drawRawHandLandmarks(results) {
 
   // 全21関節点の独立平滑化（オブジェクトプールを再利用して毎フレームの新規生成・破棄によるGCスパイクを完全排除）
   if (hasHands) {
-    for (let i = 0; i < 21; i++) {
-      const raw = landmarks[i];
-      landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
+    if (isReacquired) {
+      // 画面外復帰初フレーム：過去の古い座標からの引きずりをバイパスし、今回検出された新座標で即座にスナップ初期化
+      for (let i = 0; i < 21; i++) {
+        const raw = landmarks[i];
+        landmarkFilters[i].snap(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
+      }
+    } else {
+      // 通常トラッキング時：適応平滑化（1 Euro Filter）
+      for (let i = 0; i < 21; i++) {
+        const raw = landmarks[i];
+        landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
+      }
     }
     hasValidSmoothedLandmarks = true;
   }
@@ -1789,8 +1821,8 @@ function drawRawHandLandmarks(results) {
   const targetColor = getTargetFingerColor(currentSongStep);
 
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
-  // カウントダウン中（3・2・1）および完走クリア演出中は打鍵認識を一時停止
-  if (tapState === "IDLE" && !isCountingDown && !isClearing) {
+  // カウントダウン中（3・2・1）、完走クリア演出中、および画面外復帰初フレームは打鍵認識を安全にスキップ
+  if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired) {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
