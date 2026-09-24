@@ -411,136 +411,117 @@ export const FINGER_CONFIGS = {
   }
 };
 
-// 「メリーさんの羊」運指・音名シーケンス定義（右手中央オクターブ C4〜G4・全25音）
-// 1:親指(C4/ド), 2:人差し指(D4/レ), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
-export const MARY_LAMB_SEQUENCE = [
-  // フレーズ1: ミ レ ド レ ミ ミ ミ (7音)
-  { step: 1, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 3, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 4, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 5, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 6, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 7, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+// 『よろこびのうた（Ode to Joy）』運指・音名シーケンス定義（右手5音固定 C5〜G5・左手自動伴奏 C3〜G3・全16小節/62音）
+// 1:親指(C5/ド), 2:人差し指(D5/レ), 3:中指(E5/ミ★第1音), 4:薬指(F5/ファ), 5:小指(G5/ソ)
+export const ODE_TO_JOY_SEQUENCE = [
+  // ==========================================
+  // 第1節（フレーズ1）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ ミ レ レ ─
+  // ==========================================
+  // 小節1: ミ ミ ファ ソ - 左手伴奏: C3
+  { step: 1,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
+  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+  // 小節2: ソ ファ ミ レ - 左手伴奏: G3
+  { step: 5,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: "G3" },
+  { step: 6,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 7,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 8,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  // 小節3: ド ド レ ミ - 左手伴奏: C3
+  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: "C3" },
+  { step: 10, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  { step: 11, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 12, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  // 小節4: ミ レ レ ─ - 左手伴奏: G3
+  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "G3" },
+  { step: 14, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 15, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
 
-  // フレーズ2: レ レ レ - ミ ソ ソ (6音)
-  { step: 8,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 9,  phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 10, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 11, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 12, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 13, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
+  // ==========================================
+  // 第2節（フレーズ2）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ レ ド ド ─
+  // ==========================================
+  // 小節5: ミ ミ ファ ソ - 左手伴奏: C3
+  { step: 16, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
+  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 18, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 19, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+  // 小節6: ソ ファ ミ レ - 左手伴奏: G3
+  { step: 20, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: "G3" },
+  { step: 21, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 23, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  // 小節7: ド ド レ ミ - 左手伴奏: C3
+  { step: 24, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: "C3" },
+  { step: 25, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  { step: 26, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 27, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  // 小節8: レ ド ド ─ - 左手伴奏: C3
+  { step: 28, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "C3" },
+  { step: 29, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  { step: 30, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
 
-  // フレーズ3: ミ レ ド レ ミ ミ ミ (7音)
-  { step: 14, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 15, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 16, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 17, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 18, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 19, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 20, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
+  // ==========================================
+  // 第3節（フレーズ3）: レ レ ミ ド ｜ レ ミ(短) ファ(短) ミ ド ｜ レ ミ(短) ファ(短) ミ レ ｜ ド レ ソ ─
+  // ==========================================
+  // 小節9: レ レ ミ ド - 左手伴奏: G3
+  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "G3" },
+  { step: 32, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 33, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 34, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  // 小節10: レ ミ(短) ファ(短) ミ ド - 左手伴奏: G3
+  { step: 35, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "G3" },
+  { step: 36, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 37, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 38, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 39, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  // 小節11: レ ミ(短) ファ(短) ミ レ - 左手伴奏: G3
+  { step: 40, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "G3" },
+  { step: 41, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 42, phrase: 4, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 43, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 44, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  // 小節12: ド レ ソ ─ - 左手伴奏: C3
+  { step: 45, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: "C3" },
+  { step: 46, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 47, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: "G3" },
 
-  // フレーズ4: レ レ ミ レ ド (5音)
-  { step: 21, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 22, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 23, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 24, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 25, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 }
-];
-
-// 「聖者の行進（When the Saints Go Marching In）」運指・音名シーケンス定義（右手中央オクターブ C4〜G4・全32音）
-// 1:親指(C4/ド), 2:人差し指(D4/レ), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
-export const SAINTS_MARCH_SEQUENCE = [
-  // フレーズ1: ド ミ ファ ソ / ド ミ ファ ソ / ド ミ ファ ソ ミ ド ミ レ (16音)
-  { step: 1,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
-  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 5,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 6,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 7,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
-  { step: 8,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 10, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 11, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
-  { step: 12, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 14, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 15, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 16, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-
-  // フレーズ2: ミ ミ レ ド ド ミ ソ ソ ファ (9音)
-  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 19, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 20, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 21, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 23, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 24, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 25, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
-
-  // フレーズ3: ミ ファ ソ ミ ド レ ド (7音)
-  { step: 26, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 27, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ", freq: 349.23 },
-  { step: 28, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", freq: 392.00 },
-  { step: 29, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", freq: 329.63 },
-  { step: 30, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 },
-  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ", freq: 293.66 },
-  { step: 32, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド", freq: 261.63 }
-];
-
-// 『彼こそが海賊（He's a Pirate）』運指・音名シーケンス定義（右手中央オクターブ C4〜G4・左手低音伴奏 C3〜G3・全16音）
-// 1:親指(C4/ド), 2:人差し指(D4/レ★主音), 3:中指(E4/ミ), 4:薬指(F4/ファ), 5:小指(G4/ソ)
-export const PIRATES_SEQUENCE = [
-  // フレーズ1: レ レ レ レ ミ (5音) - 左手伴奏: D3 (Dm)
-  { step: 1,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: "D3" },
-  { step: 2,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
-  { step: 3,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
-  { step: 4,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
-  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
-
-  // フレーズ2: ファ ファ ファ ファ ソ (5音) - 左手伴奏: F3 (F)
-  { step: 6,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: "F3" },
-  { step: 7,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
-  { step: 8,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
-  { step: 9,  phrase: 2, fingerNum: 4, fingerKey: "RING",   rightFinger: "RING",   note: "ファ", rightNote: "F4", freq: 349.23, autoLeftNote: null },
-  { step: 10, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  rightFinger: "PINKY",  note: "ソ", rightNote: "G4", freq: 392.00, autoLeftNote: null },
-
-  // フレーズ3: ミ ミ ミ レ ド (5音) - 左手伴奏: C3 (C)
-  { step: 11, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: "C3" },
-  { step: 12, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
-  { step: 13, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", rightFinger: "MIDDLE", note: "ミ", rightNote: "E4", freq: 329.63, autoLeftNote: null },
-  { step: 14, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: null },
-  { step: 15, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  rightFinger: "THUMB",  note: "ド", rightNote: "C4", freq: 261.63, autoLeftNote: null },
-
-  // フレーズ4: レ ─── (1音) - 左手伴奏: D3 (Dm)
-  { step: 16, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  rightFinger: "INDEX",  note: "レ", rightNote: "D4", freq: 293.66, autoLeftNote: "D3" }
+  // ==========================================
+  // 第4節（フレーズ4）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ レ ド ド ─
+  // ==========================================
+  // 小節13: ミ ミ ファ ソ - 左手伴奏: C3
+  { step: 48, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
+  { step: 49, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 50, phrase: 4, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 51, phrase: 4, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+  // 小節14: ソ ファ ミ レ - 左手伴奏: G3
+  { step: 52, phrase: 4, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: "G3" },
+  { step: 53, phrase: 4, fingerNum: 4, fingerKey: "RING",   note: "ファ", rightNote: "F5", freq: 698.46, autoLeftNote: null },
+  { step: 54, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  { step: 55, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  // 小節15: ド ド レ ミ - 左手伴奏: C3
+  { step: 56, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: "C3" },
+  { step: 57, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  { step: 58, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  { step: 59, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  // 小節16: レ ド ド ─ - 左手伴奏: C3
+  { step: 60, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "C3" },
+  { step: 61, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
+  { step: 62, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null }
 ];
 
 // 演奏曲リスト（自分のペースで1音ずつ進めるステップ演奏）
 export const SONGS = {
-  pirates: {
-    id: "pirates",
-    title: "彼こそが海賊",
-    sequence: PIRATES_SEQUENCE
-  },
-  mary: {
-    id: "mary",
-    title: "メリーさんの羊",
-    sequence: MARY_LAMB_SEQUENCE
-  },
-  saints: {
-    id: "saints",
-    title: "聖者の行進",
-    sequence: SAINTS_MARCH_SEQUENCE
+  ode_to_joy: {
+    id: "ode_to_joy",
+    title: "よろこびのうた",
+    sequence: ODE_TO_JOY_SEQUENCE
   }
 };
 
-export let currentSongId = "pirates";
-export let currentSequence = SONGS.pirates.sequence;
+export let currentSongId = "ode_to_joy";
+export let currentSequence = SONGS.ode_to_joy.sequence;
 export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
-export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指
+export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指: MIDDLE (3: ミ)
 
 // 3秒カウントダウン状態管理
 export let isCountingDown = false;
@@ -2098,11 +2079,11 @@ const audioStartBanner = document.getElementById("audio-start-banner");
 if (audioStartBanner) {
   audioStartBanner.addEventListener("click", () => {
     ensureAudioContext();
-    playTapSound("D4", false); // D4トーンで確認発音
+    playTapSound("E5", false); // E5トーンで確認発音（よろこびのうた 第1音と同じ）
   });
 }
 
-// 初期ターゲット指（彼こそが海賊 第1音: 人差し指 2 レ）の設定と楽曲ガイドUIの描画
+// 初期ターゲット指（よろこびのうた 第1音: 中指 3 ミ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
 
