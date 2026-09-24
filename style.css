@@ -65,9 +65,8 @@ html, body {
   position: absolute;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   left: calc(12px + env(safe-area-inset-left, 0px));
-  background-color: rgba(0, 0, 0, 0.8);
+  background-color: rgba(0, 0, 0, 0.85);
   border: 1px solid #333333;
-  backdrop-filter: blur(4px);
   padding: 8px 12px;
   border-radius: 4px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -75,7 +74,6 @@ html, body {
   line-height: 1.4;
   color: #cccccc;
   z-index: 100;
-  display: flex;
   flex-direction: column;
   gap: 3px;
   pointer-events: none;
@@ -202,7 +200,7 @@ html, body {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background-color: rgba(15, 15, 15, 0.85);
+  background-color: rgba(20, 20, 20, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.4);
   color: #ffffff;
   font-size: 16px;
@@ -211,8 +209,6 @@ html, body {
   align-items: center;
   justify-content: center;
   user-select: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   transition: all 0.15s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
@@ -233,12 +229,10 @@ html, body {
   top: 46px;
   right: 0;
   min-width: 140px;
-  background-color: rgba(15, 15, 15, 0.95);
+  background-color: rgba(20, 20, 20, 0.95);
   border: 1px solid #333333;
   border-radius: 6px;
   padding: 6px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
@@ -291,9 +285,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background-color: rgba(0, 0, 0, 0.65);
   z-index: 300;
   pointer-events: none;
 }

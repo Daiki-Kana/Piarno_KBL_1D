@@ -30,6 +30,19 @@ const csvFileInput = document.getElementById("csv-file-input");
 const testSoundBtn = document.getElementById("test-sound-btn");
 const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
+const debugPanel = document.getElementById("debug-panel");
+
+// デバッグHUDの表示状態フラグ（非表示時は毎フレームのDOM書き込み・文字列演算をスキップ）
+let isDebugPanelVisible = false;
+function checkDebugPanelVisibility() {
+  if (!debugPanel) {
+    isDebugPanelVisible = false;
+    return;
+  }
+  isDebugPanelVisible = window.getComputedStyle(debugPanel).display !== "none";
+}
+checkDebugPanelVisibility();
+window.addEventListener("resize", checkDebugPanelVisibility);
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -319,10 +332,17 @@ class PointFilter {
     this.yf.reset();
   }
 
-  filter(x, y, timestamp) {
+  filter(x, y, timestamp, out = null) {
+    const fx = this.xf.filter(x, timestamp);
+    const fy = this.yf.filter(y, timestamp);
+    if (out) {
+      out.x = fx;
+      out.y = fy;
+      return out;
+    }
     return {
-      x: this.xf.filter(x, timestamp),
-      y: this.yf.filter(y, timestamp)
+      x: fx,
+      y: fy
     };
   }
 }
@@ -621,11 +641,36 @@ export function selectSong(songId) {
 // 手首（0）から親指・人差し指・中指・薬指・小指（20）まで全関節を独立して常時平滑化
 const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(1.2, 0.008));
 
+// 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
+const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+
 // 一時的な検出ロスト対策（数フレームの途切れで骨格が点滅・ジャンプするのを防止）
 let lostFrames = 0;
 const MAX_LOST_FRAMES = 3;
-let lastSmoothedLandmarks = null;
+let hasValidSmoothedLandmarks = false;
 let lastRawLandmarks = null;
+
+// 指ごとの対象外骨格接続線のキャッシュ（毎フレームのfilter処理・配列アロケーションを完全排除）
+const cachedOtherConnections = {};
+export let currentOtherConnections = [];
+
+/**
+ * ターゲット指変更時の骨格接続線キャッシュ更新
+ * @param {string} fingerKey
+ */
+export function updateCachedConnections(fingerKey) {
+  if (cachedOtherConnections[fingerKey]) {
+    currentOtherConnections = cachedOtherConnections[fingerKey];
+    return;
+  }
+  const cfg = FINGER_CONFIGS[fingerKey] || FINGER_CONFIGS.THUMB;
+  const targetIndices = cfg.indices;
+  const connections = HandLandmarker.HAND_CONNECTIONS.filter(
+    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
+  );
+  cachedOtherConnections[fingerKey] = connections;
+  currentOtherConnections = connections;
+}
 
 // 指ごとの学習閾値モデル
 export const fingerThresholdModels = {
@@ -654,11 +699,17 @@ export function setTargetFinger(fingerKey) {
   if (!FINGER_CONFIGS[fingerKey]) return;
   currentFingerKey = fingerKey;
 
+  // 骨格接続線キャッシュを更新
+  updateCachedConnections(fingerKey);
+
   // 指別学習モデルの閾値を適用
   applyFingerThreshold(fingerKey);
 
   console.log(`[FINGER TARGET] ターゲット指: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
 }
+
+// 初回ターゲット指の骨格接続線を初期化
+updateCachedConnections(currentFingerKey);
 
 /**
  * 楽曲進行とターゲット指UIの更新
@@ -1555,7 +1606,9 @@ function processVideoFrame(frameTime) {
   const results = handLandmarker.detectForVideo(video, timestampMs);
 
   const calcDuration = performance.now() - startTime;
-  inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
+  if (isDebugPanelVisible) {
+    inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
+  }
 
   // 生ランドマーク座標の直接描画
   drawRawHandLandmarks(results);
@@ -1607,17 +1660,19 @@ function drawRawHandLandmarks(results) {
   if (!hasHands) {
     lostFrames++;
     // 3フレーム以内（約50ms）の一時的ロストであれば直前の平滑化座標で描画を維持し、画面の点滅・ジャンプを防止
-    if (lostFrames <= MAX_LOST_FRAMES && lastSmoothedLandmarks) {
+    if (lostFrames <= MAX_LOST_FRAMES && hasValidSmoothedLandmarks) {
       // 直前フレームの座標をそのまま使用して継続描画
     } else {
-      handsCount.textContent = "0";
+      if (isDebugPanelVisible) {
+        handsCount.textContent = "0";
+      }
       if (tapState !== "IDLE") {
         tapState = "IDLE";
         updateStateHud("IDLE", false);
       }
       // 完全に画角から外れた場合のみフィルターをリセット
       landmarkFilters.forEach((f) => f.reset());
-      lastSmoothedLandmarks = null;
+      hasValidSmoothedLandmarks = false;
       lastRawLandmarks = null;
       resetDebugMetrics();
       updateAndDrawTapEffects(canvasCtx);
@@ -1627,7 +1682,9 @@ function drawRawHandLandmarks(results) {
     lostFrames = 0;
   }
 
-  handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
+  if (isDebugPanelVisible) {
+    handsCount.textContent = hasHands ? `${results.landmarks.length}` : "1 (補間)";
+  }
 
   // メインの手のランドマーク生座標
   let landmarks = hasHands ? results.landmarks[0] : lastRawLandmarks;
@@ -1649,23 +1706,18 @@ function drawRawHandLandmarks(results) {
     lastRawLandmarks = landmarks;
   }
 
-  // 全21関節点の独立平滑化（1 Euro Filter）
-  let smoothedLandmarks = [];
+  // 全21関節点の独立平滑化（オブジェクトプールを再利用して毎フレームの新規生成・破棄によるGCスパイクを完全排除）
   if (hasHands && !isAnomalousJump) {
     for (let i = 0; i < 21; i++) {
       const raw = landmarks[i];
-      const pt = landmarkFilters[i].filter(raw.x * width, raw.y * height, now);
-      smoothedLandmarks.push(pt);
+      landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
     }
-    lastSmoothedLandmarks = smoothedLandmarks;
-  } else {
-    smoothedLandmarks = lastSmoothedLandmarks;
+    hasValidSmoothedLandmarks = true;
   }
+  const smoothedLandmarks = smoothedLandmarksPool;
 
-  // 1. 対象指以外の骨格（手のひら・他の指すべて）を平滑化座標で薄いグレースケール描画
-  const otherConnections = HAND_CONNECTIONS.filter(
-    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
-  );
+  // 1. 対象指以外の骨格（手のひら・他の指すべて）を事前キャッシュされた接続線で描画（毎フレームのfilter処理廃止）
+  const otherConnections = currentOtherConnections;
 
   canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
   canvasCtx.lineWidth = 1;
@@ -1897,6 +1949,7 @@ function drawTipTargetMark(x, y, color) {
  * @param {number} ry
  */
 function updateDebugMetrics(x, y, ry) {
+  if (!isDebugPanelVisible) return;
   tipXVal.textContent = `${x.toFixed(1)}px`;
   tipYVal.textContent = `${y.toFixed(1)}px`;
   if (relYVal) {
@@ -1908,6 +1961,7 @@ function updateDebugMetrics(x, y, ry) {
  * 手ロスト時のHUDメトリクスリセット
  */
 function resetDebugMetrics() {
+  if (!isDebugPanelVisible) return;
   tipXVal.textContent = "-";
   tipYVal.textContent = "-";
   if (relYVal) {
@@ -1944,8 +1998,11 @@ function updateFps() {
   const elapsed = now - lastFpsUpdateTime;
 
   if (elapsed >= 500) {
-    const fps = ((frameCount * 1000) / elapsed).toFixed(1);
-    fpsCounter.textContent = fps;
+    checkDebugPanelVisibility();
+    if (isDebugPanelVisible) {
+      const fps = ((frameCount * 1000) / elapsed).toFixed(1);
+      fpsCounter.textContent = fps;
+    }
     frameCount = 0;
     lastFpsUpdateTime = now;
   }
