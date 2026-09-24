@@ -1714,9 +1714,16 @@ function schedulePredictLoop() {
   }
 }
 
+// 右手トラッキングロックの最大許容追従距離（正規化座標系：画面対角線/幅の約35%）
+// 1フレームで右手手首がこれ以上離れた位置にワープすることは物理的にあり得ないため、右手一時ロスト時の左手誤乗り換えを遮断
+const MAX_WRIST_TRACK_DISTANCE = 0.35;
+
+// 自撮り鏡像配置における右手存在下限X座標（正規化座標系：画面左45%未満にある単独手は左手として除外）
+const MIN_RIGHT_HAND_X = 0.45;
+
 /**
  * 位置連続性（Nearest-Neighbor）に基づく右手セレクター
- * 検出された複数の手（両手）の中から右手のみを特定し、左手データを完全に破棄する
+ * 追従リミッターと左手除外判定により、右手の一時ロスト時の左手乗り換え・左手誤ロックを完全防止
  * @param {object} results MediaPipe HandLandmarkerの検出結果
  * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
  */
@@ -1727,44 +1734,61 @@ function selectRightHandLandmarks(results) {
 
   const hands = results.landmarks;
 
-  // 検出された手が1つの場合
-  if (hands.length === 1) {
-    return hands[0];
-  }
-
-  // 検出された手が2つ以上の場合
+  // 1. 追従状態（lastTrackedWrist が存在する場合）：
+  // 検出された全手の中から lastTrackedWrist とのユークリッド距離が最小の手を探索
   if (lastTrackedWrist) {
-    // 1. 前フレームの右手位置（lastTrackedWrist）が存在する場合：
-    // 各手の手首位置（Landmark 0）とのユークリッド距離が最も近い手を右手として選択・継続追従
     let closestHand = hands[0];
     let minDistance = Infinity;
 
     for (let i = 0; i < hands.length; i++) {
       const hand = hands[i];
-      const wrist = hand[0]; // 手首
+      const wrist = hand[0]; // 手首 (Landmark 0)
       const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
       if (dist < minDistance) {
         minDistance = dist;
         closestHand = hand;
       }
     }
-    return closestHand;
-  } else {
-    // 2. 未追従状態（起動時や完全ロスト復帰初フレームで2手検出時）：
-    // 自撮り鏡像配置において右手側となる「画面X座標が大きい（右側にある）手」を手首座標で比較して初期ロック
-    let rightmostHand = hands[0];
-    let maxX = -Infinity;
 
-    for (let i = 0; i < hands.length; i++) {
-      const hand = hands[i];
-      const wrist = hand[0];
-      if (wrist.x > maxX) {
-        maxX = wrist.x;
-        rightmostHand = hand;
-      }
+    // スイッチ防止リミッター：
+    // 最も近い手であっても最大許容距離（MAX_WRIST_TRACK_DISTANCE）を超えている場合、
+    // 右手が一時ロストして画面内に左手のみが残った状況と判定し、左手への誤乗り換えを遮断して null を返す
+    if (minDistance > MAX_WRIST_TRACK_DISTANCE) {
+      return null;
     }
+
+    return closestHand;
+  }
+
+  // 2. 未追従状態（起動時または完全ロスト後の初回検出時）：
+  if (hands.length === 1) {
+    const wrist = hands[0][0];
+    // 左手単独時の誤ロック防止：手首が明らかに画面左側（x < MIN_RIGHT_HAND_X）にある場合は左手と判定して除外
+    if (wrist.x < MIN_RIGHT_HAND_X) {
+      return null;
+    }
+    return hands[0];
+  }
+
+  // 複数手検出時は、自撮り鏡像配置において最も右側（x座標が大きい）の手を選択
+  let rightmostHand = null;
+  let maxX = -Infinity;
+
+  for (let i = 0; i < hands.length; i++) {
+    const hand = hands[i];
+    const wrist = hand[0];
+    if (wrist.x > maxX) {
+      maxX = wrist.x;
+      rightmostHand = hand;
+    }
+  }
+
+  // 最も右側にある手であっても、画面左端にある場合は右手とみなさない
+  if (rightmostHand && rightmostHand[0].x >= MIN_RIGHT_HAND_X) {
     return rightmostHand;
   }
+
+  return null;
 }
 
 /**
