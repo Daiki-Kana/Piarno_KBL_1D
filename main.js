@@ -690,8 +690,14 @@ export function getTargetFingerColor(stepIndex) {
   if (!current) {
     return {
       stroke: "rgba(0, 229, 255, 0.95)",
+      halo: "rgba(0, 229, 255, 0.25)",
+      accent: "rgba(0, 229, 255, 0.65)",
       glow: "rgba(0, 229, 255, 0.8)",
       fill: "#00e5ff",
+      r: 0,
+      g: 229,
+      b: 255,
+      rgb: "0, 229, 255",
       name: "cyan"
     };
   }
@@ -716,24 +722,42 @@ export function getTargetFingerColor(stepIndex) {
       // 1打目: 黄色 (Yellow)
       return {
         stroke: "rgba(255, 230, 0, 0.95)",
+        halo: "rgba(255, 230, 0, 0.25)",
+        accent: "rgba(255, 230, 0, 0.65)",
         glow: "rgba(255, 230, 0, 0.85)",
         fill: "#fff700",
+        r: 255,
+        g: 230,
+        b: 0,
+        rgb: "255, 230, 0",
         name: "yellow"
       };
     } else if (idxInGroup === 1) {
       // 2打目: 緑色 (Green)
       return {
         stroke: "rgba(0, 255, 136, 0.95)",
+        halo: "rgba(0, 255, 136, 0.25)",
+        accent: "rgba(0, 255, 136, 0.65)",
         glow: "rgba(0, 255, 136, 0.85)",
         fill: "#00ff88",
+        r: 0,
+        g: 255,
+        b: 136,
+        rgb: "0, 255, 136",
         name: "green"
       };
     } else {
       // 3打目: 青色 (Blue)
       return {
         stroke: "rgba(0, 180, 255, 0.95)",
+        halo: "rgba(0, 180, 255, 0.25)",
+        accent: "rgba(0, 180, 255, 0.65)",
         glow: "rgba(0, 180, 255, 0.85)",
         fill: "#00b4d8",
+        r: 0,
+        g: 180,
+        b: 255,
+        rgb: "0, 180, 255",
         name: "blue"
       };
     }
@@ -742,8 +766,14 @@ export function getTargetFingerColor(stepIndex) {
   // 単発: 水色 (Cyan)
   return {
     stroke: "rgba(0, 229, 255, 0.95)",
+    halo: "rgba(0, 229, 255, 0.25)",
+    accent: "rgba(0, 229, 255, 0.65)",
     glow: "rgba(0, 229, 255, 0.85)",
     fill: "#00e5ff",
+    r: 0,
+    g: 229,
+    b: 255,
+    rgb: "0, 229, 255",
     name: "cyan"
   };
 }
@@ -768,6 +798,9 @@ export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
   const midX = (fromX + toX) / 2;
   const midY = (fromY + toY) / 2 - Math.min(80, Math.max(30, dist * 0.35));
 
+  // RGB文字列の事前キャッシュ（ループ内の正規表現全廃のため）
+  const colorRgb = color?.rgb || (color?.r !== undefined ? `${color.r}, ${color.g}, ${color.b}` : "0, 229, 255");
+
   tapVisualEffects.push({
     type: "beam",
     fromX,
@@ -779,7 +812,8 @@ export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
     progress: 0.0,
     speed: 0.055, // 約18フレームで軽快に着弾
     trail: [],    // 軌跡座標履歴
-    color
+    color,
+    colorRgb
   });
 }
 
@@ -806,37 +840,52 @@ export function updateAndDrawTapEffects(ctx) {
       const curX = invT * invT * fx.fromX + 2 * invT * t * fx.midX + t * t * fx.toX;
       const curY = invT * invT * fx.fromY + 2 * invT * t * fx.midY + t * t * fx.toY;
 
-      // 軌跡の追加（最大18個）
-      fx.trail.unshift({ x: curX, y: curY });
+      // 軌跡の追加（unshiftによる全要素シフトを排除し、push/shiftによる軽量管理方式に変更）
+      fx.trail.push({ x: curX, y: curY });
       if (fx.trail.length > 18) {
-        fx.trail.pop();
+        fx.trail.shift();
       }
 
-      // ビーム軌跡の描画（2層パス：外側半透明ネオンカラー ＋ 内側高輝度ホワイトコア）
-      if (fx.trail.length > 1) {
-        // パス1: 外側のネオン光条ライン（太さ最大 9px）
-        for (let j = 0; j < fx.trail.length - 1; j++) {
-          const pA = fx.trail[j];
-          const pB = fx.trail[j + 1];
-          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.2);
+      // ビーム軌跡のバッチ描画（セグメント細切れstrokeを廃止し、3区間にまとめてドローコールを最小化）
+      const trailLen = fx.trail.length;
+      if (trailLen > 1) {
+        const BATCH_COUNT = 3;
+        const colorRgb = fx.colorRgb || fx.color?.rgb || "0, 229, 255";
+
+        // パス1: 外側のネオン光条ライン（3バッチにまとめてドローコール削減）
+        for (let s = 0; s < BATCH_COUNT; s++) {
+          const startIdx = Math.floor((s * (trailLen - 1)) / BATCH_COUNT);
+          const endIdx = Math.floor(((s + 1) * (trailLen - 1)) / BATCH_COUNT);
+          if (startIdx >= endIdx) continue;
+
+          // 軌跡の進行度（0.0: 最も古い尾部, 1.0: 最新の先端部）
+          const prog = (startIdx + endIdx) / (2 * (trailLen - 1));
+          const trailAlpha = prog * (1.0 - t * 0.2);
 
           ctx.beginPath();
-          ctx.moveTo(pA.x, pA.y);
-          ctx.lineTo(pB.x, pB.y);
-          ctx.strokeStyle = fx.color.stroke.replace(/[\d.]+\)$/, `${(trailAlpha * 0.85).toFixed(2)})`);
+          ctx.moveTo(fx.trail[startIdx].x, fx.trail[startIdx].y);
+          for (let k = startIdx + 1; k <= endIdx; k++) {
+            ctx.lineTo(fx.trail[k].x, fx.trail[k].y);
+          }
+          ctx.strokeStyle = `rgba(${colorRgb}, ${(trailAlpha * 0.85).toFixed(2)})`;
           ctx.lineWidth = Math.max(2.0, 9.0 * trailAlpha);
           ctx.stroke();
         }
 
-        // パス2: 内側の高輝度ホワイトコア（太さ最大 3.5px）
-        for (let j = 0; j < fx.trail.length - 1; j++) {
-          const pA = fx.trail[j];
-          const pB = fx.trail[j + 1];
-          const trailAlpha = (1.0 - j / fx.trail.length) * (1.0 - t * 0.2);
+        // パス2: 内側の高輝度ホワイトコア（3バッチにまとめてドローコール削減）
+        for (let s = 0; s < BATCH_COUNT; s++) {
+          const startIdx = Math.floor((s * (trailLen - 1)) / BATCH_COUNT);
+          const endIdx = Math.floor(((s + 1) * (trailLen - 1)) / BATCH_COUNT);
+          if (startIdx >= endIdx) continue;
+
+          const prog = (startIdx + endIdx) / (2 * (trailLen - 1));
+          const trailAlpha = prog * (1.0 - t * 0.2);
 
           ctx.beginPath();
-          ctx.moveTo(pA.x, pA.y);
-          ctx.lineTo(pB.x, pB.y);
+          ctx.moveTo(fx.trail[startIdx].x, fx.trail[startIdx].y);
+          for (let k = startIdx + 1; k <= endIdx; k++) {
+            ctx.lineTo(fx.trail[k].x, fx.trail[k].y);
+          }
           ctx.strokeStyle = `rgba(255, 255, 255, ${(trailAlpha * 0.95).toFixed(2)})`;
           ctx.lineWidth = Math.max(1.0, 3.5 * trailAlpha);
           ctx.stroke();
@@ -1725,99 +1774,117 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 指定された指の骨格描画（極太ネオンチューブ＆ホワイトコアのダブルパス描画）
+  // 5. 指定された指の骨格描画（shadowBlurを撤去し、多層ストロークで高速・高鮮明に描画）
   canvasCtx.save();
-
-  // パス1: 外側の極太発光ネオンライン（太さ 6.5px、強烈なグロー）
-  canvasCtx.shadowColor = targetColor.glow;
-  canvasCtx.shadowBlur = 24;
-  canvasCtx.strokeStyle = targetColor.stroke;
-  canvasCtx.lineWidth = 6.5;
   canvasCtx.lineCap = "round";
   canvasCtx.lineJoin = "round";
 
-  canvasCtx.beginPath();
-  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-  canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  canvasCtx.stroke();
-
-  // パス2: 内側の高輝度ホワイトコアライン（太さ 2.6px：芯が白く発光して立体感・視認性を極大化）
-  canvasCtx.shadowBlur = 0;
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-  canvasCtx.lineWidth = 2.6;
-
-  canvasCtx.beginPath();
-  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-  canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  canvasCtx.stroke();
-
-  // 対象指関節点（P1, P2, P3）の描画（極太ネオンドット＋白コア）
-  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
+  // 共通骨格パス生成
+  const drawBonePath = () => {
     canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 5.5, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.fill;
-    canvasCtx.shadowColor = targetColor.glow;
-    canvasCtx.shadowBlur = 18;
+    canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+    canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+    canvasCtx.lineTo(smoothP3.x, smoothP3.y);
+    canvasCtx.lineTo(smoothTip.x, smoothTip.y);
+  };
+
+  // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
+  canvasCtx.strokeStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
+  canvasCtx.lineWidth = 12.0;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 層2: 中間メインネオンライン（太さ 6.0px、高彩度ネオンカラー）
+  canvasCtx.strokeStyle = targetColor.stroke;
+  canvasCtx.lineWidth = 6.0;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 層3: 内側高輝度ホワイトコアライン（太さ 2.4px：芯が白く発光して立体感・視認性を極大化）
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  canvasCtx.lineWidth = 2.4;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
+  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
+    // 層1: 外側ハロー
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
     canvasCtx.fill();
 
+    // 層2: メインカラードット
     canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2.8, 0, 2 * Math.PI);
+    canvasCtx.arc(pt.x, pt.y, 5.0, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = targetColor.fill;
+    canvasCtx.fill();
+
+    // 層3: 内側白熱コア
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 2.4, 0, 2 * Math.PI);
     canvasCtx.fillStyle = "#ffffff";
-    canvasCtx.shadowBlur = 0;
     canvasCtx.fill();
   });
 
-  // 6. 対象指先端（TIP）のハイライトターゲット描画（極太二重発光リング＋白熱コア）
+  // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
   drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
   canvasCtx.restore();
 
-  // 7. 演奏時エフェクト（波紋＆光パーティクル）のアニメーション更新・描画
+  // 7. 演奏時エフェクト（彗星ビーム）のアニメーション更新・描画
   updateAndDrawTapEffects(canvasCtx);
 }
 
 /**
- * 対象指先端（TIP）のターゲットマーク描画（極太二重発光リング＋白熱コア）
+ * 対象指先端（TIP）のターゲットマーク描画（shadowBlur全廃・多層二重発光リング＋白熱コア）
  * @param {number} x
  * @param {number} y
  * @param {object} color
  */
 function drawTipTargetMark(x, y, color) {
   const strokeColor = color?.stroke || "rgba(0, 229, 255, 0.95)";
+  const haloColor = color?.halo || "rgba(0, 229, 255, 0.25)";
+  const accentColor = color?.accent || "rgba(0, 229, 255, 0.65)";
   const fillColor = color?.fill || "#00e5ff";
-  const glowColor = color?.glow || "rgba(0, 229, 255, 0.85)";
 
   canvasCtx.save();
-  canvasCtx.shadowColor = glowColor;
-  canvasCtx.shadowBlur = 28;
 
-  // 外側の極太発光メインリング（半径13px、線幅 3.5px）
+  // 外側の極太発光メインリング（多層化：太ハロー＋鮮明コア線）
+  // 層1: 外側発光ハローリング（半径13px、線幅 7.5px）
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = haloColor;
+  canvasCtx.lineWidth = 7.5;
+  canvasCtx.stroke();
+
+  // 層2: 外側メインリング（半径13px、線幅 2.8px）
   canvasCtx.beginPath();
   canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
   canvasCtx.strokeStyle = strokeColor;
-  canvasCtx.lineWidth = 3.5;
+  canvasCtx.lineWidth = 2.8;
   canvasCtx.stroke();
 
-  // 内側の補助リング（半径8px、線幅 1.8px）
+  // 内側の補助リング（半径8px、線幅 1.8px、事前計算accentColorで正規表現全廃）
   canvasCtx.beginPath();
   canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = strokeColor.replace(/[\d.]+\)$/, "0.65)");
+  canvasCtx.strokeStyle = accentColor;
   canvasCtx.lineWidth = 1.8;
   canvasCtx.stroke();
 
-  // 中心発光ドット（カラー外輪 半径 5.5px + 白熱コア 半径 3.0px）
+  // 中心発光ドット（多層描画: 外輪ハロー 半径 7.0px + メイン 半径 4.6px + 白熱コア 半径 2.4px）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 5.5, 0, 2 * Math.PI);
+  canvasCtx.arc(x, y, 7.0, 0, 2 * Math.PI);
+  canvasCtx.fillStyle = haloColor;
+  canvasCtx.fill();
+
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 4.6, 0, 2 * Math.PI);
   canvasCtx.fillStyle = fillColor;
   canvasCtx.fill();
 
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 3.0, 0, 2 * Math.PI);
+  canvasCtx.arc(x, y, 2.4, 0, 2 * Math.PI);
   canvasCtx.fillStyle = "#ffffff";
-  canvasCtx.shadowBlur = 0;
   canvasCtx.fill();
 
   canvasCtx.restore();
