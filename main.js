@@ -756,8 +756,9 @@ export function updateCachedConnections(fingerKey) {
 }
 
 // 指ごとの学習閾値モデル
+// 親指（THUMB）は机面への垂直変位が小さいため、初期閾値を緩和（0.55 / 0.40）
 export const fingerThresholdModels = {
-  THUMB: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  THUMB: { hitRy: 0.55, liftRy: 0.40, samples: 0 },
   MIDDLE: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
   RING: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
   PINKY: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
@@ -1261,8 +1262,9 @@ function trainModelForFinger(fingerKey) {
 
     if (medianHitRy > maxAirRy) {
       // 空中最大と打鍵中央値の中間点に打鍵閾値を設定
-      // 薬指（RING）は可動域が狭いため打鍵マージンをやや緩和（0.38）して叩きやすくする
-      const hitRatio = fingerKey === "RING" ? 0.38 : 0.45;
+      // 薬指（RING）は可動域が狭いため打鍵マージンを緩和（0.38）
+      // 親指（THUMB）は机面への垂直変位が小さいためさらに緩和（0.30）して反応感度を向上
+      const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.38 : 0.45);
       hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
 
       // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
@@ -1275,8 +1277,9 @@ function trainModelForFinger(fingerKey) {
       liftTh = hitTh - 0.03;
     }
   } else {
-    // 打鍵サンプルが0件の場合の安全マージン
-    hitTh = maxAirRy + 0.18;
+    // 打鍵サンプルが0件の場合の安全マージン（親指は垂直変位が小さいため0.10、他指は0.18）
+    const safetyMargin = fingerKey === "THUMB" ? 0.10 : 0.18;
+    hitTh = maxAirRy + safetyMargin;
     liftTh = hitTh - 0.03;
   }
 
