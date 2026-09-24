@@ -708,9 +708,9 @@ const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(1.2, 0.
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
 const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
 
-// 一時的な検出ロスト対策（数フレームの途切れで骨格が点滅・ジャンプするのを防止）
+// 一時的な検出ロスト対策（打鍵時の陰影による瞬断で骨格が点滅・ジャンプするのを防止しつつ、退出時は約0.1秒で即消去）
 let lostFrames = 0;
-const MAX_LOST_FRAMES = 3;
+const MAX_LOST_FRAMES = 6;
 let hasValidSmoothedLandmarks = false;
 let lastRawLandmarks = null;
 
@@ -1714,16 +1714,28 @@ function schedulePredictLoop() {
   }
 }
 
+// 追従時の最大許容移動距離（正規化座標系：画面幅の25%）
+// 1フレーム（約16ms）で右手手首がこれ以上離れることは物理的にあり得ないため、左手への飛び移りを完全遮断
+const MAX_WRIST_TRACK_DISTANCE = 0.25;
+
+// ナックル外積の明確な判定閾値（ゼロ近傍の不感帯用）
+const CROSS_RIGHT_THRESHOLD = -0.002;
+const CROSS_LEFT_THRESHOLD = 0.002;
+
+// 画面左端のセーフティ境界（生カメラ画像で x < 0.02 等の極端な欠損フレームのみ除外）
+const MIN_SAFETY_X = 0.02;
+
 /**
- * 手のひらナックルの幾何学的向き（2Dベクトル外積）による右手判定
+ * 手のひらナックルの幾何学的向き（2Dベクトル外積）による右手判定（ヒステリシス対応）
  * 手首(0)→人差し指付け根(5) と 手首(0)→小指付け根(17) の外積を計算
  * 生カメラ画像（CSS scaleX(-1)反転前）において、手の甲が上（机面打鍵姿勢）の場合：
  * - 物理的な右手: 人差し指(5)が右(+X)、小指(17)が左(-X) → cross < 0
  * - 物理的な左手: 人差し指(5)が左(-X)、小指(17)が右(+X) → cross > 0
  * @param {Array<object>} hand 手の全21ランドマーク配列
+ * @param {boolean} isCurrentlyTracked 現在追従中の右手候補（位置が近い）かどうか
  * @returns {boolean} 物理的な右手であれば true、左手であれば false
  */
-function isAnatomicallyRightHand(hand) {
+function isAnatomicallyRightHand(hand, isCurrentlyTracked = false) {
   if (!hand || hand.length < 21) return false;
 
   const p0 = hand[0];   // 手首 (WRIST)
@@ -1738,19 +1750,30 @@ function isAnatomicallyRightHand(hand) {
   // 2D外積（Cross Product）
   const cross = vIndexX * vPinkyY - vIndexY * vPinkyX;
 
-  // 生カメラ画像で机面打鍵ポジション（手の甲が上）のとき、右手は cross < 0 となる
-  // 微小なノイズによる誤判定を防ぐため、ごく僅かな負の閾値 (-0.0005) を設定
-  return cross < -0.0005;
+  // 明確に右手（人差し指が右、小指が左）
+  if (cross < CROSS_RIGHT_THRESHOLD) {
+    return true;
+  }
+  // 明確に左手（人差し指が左、小指が右）
+  if (cross > CROSS_LEFT_THRESHOLD) {
+    return false;
+  }
+
+  // ゼロ近傍の不感帯（ローアングルでの揺らぎ）：
+  // 現在追従中の右手（前回の右手位置に近い）であれば、打鍵時の指屈伸によるブレとみなして右手判定を維持
+  if (isCurrentlyTracked) {
+    return true;
+  }
+
+  // 未追従時のゼロ近傍は、負側であれば右手候補として扱う
+  return cross < 0;
 }
 
-// 画面左端のセーフティ境界（生カメラ画像で x < 0.05 等の極端な欠損フレームのみ除外）
-const MIN_SAFETY_X = 0.02;
-
 /**
- * 解剖学的判定（ナックル外積）と位置連続性に基づく右手セレクター
- * - 画面内の手から左手を解剖学的外積（cross > 0）により100%除外
+ * 位置連続性（Nearest-Neighbor）とナックル外積ヒステリシスに基づく右手セレクター
+ * - 追従中は候補数に関わらず画面幅25%以上の距離ジャンプを無条件遮断（左手飛び移り防止）
+ * - ナックル外積のヒステリシスにより、ローアングル打鍵時のチャタリング（判定点滅）を解消
  * - 右手が画面から消えた場合は左手に乗り換えず、右手が戻るまで待機（null返却）
- * - 画面中央境界のハードカットは行わず、演奏領域全体の自由な打鍵を許容
  * @param {object} results MediaPipe HandLandmarkerの検出結果
  * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
  */
@@ -1759,35 +1782,18 @@ function selectRightHandLandmarks(results) {
     return null;
   }
 
-  // 1. 検出された全手の中から、ナックル幾何学外積で「右手」と判定される手のみを抽出
-  // （左手は cross > 0 となるためここで100%完全に排除され、候補にすら残らない）
-  const rightHandCandidates = results.landmarks.filter((hand) => {
-    if (!isAnatomicallyRightHand(hand)) return false;
-    // 画面端スレスレの欠損セーフティ
-    const wrist = hand[0];
-    if (wrist.x < MIN_SAFETY_X) return false;
-    return true;
-  });
+  const hands = results.landmarks;
 
-  // 画面内に右手が存在しない場合（左手のみ、または右手ロスト中）：
-  // 左手に絶対に乗り換えず、右手が画面に戻るまで待機（null）
-  if (rightHandCandidates.length === 0) {
-    return null;
-  }
-
-  // 2. 右手候補が1つの場合：唯一の右手として即座に採用
-  if (rightHandCandidates.length === 1) {
-    return rightHandCandidates[0];
-  }
-
-  // 3. 右手候補が複数検出された場合（ノイズ等）：
+  // ========================================================
+  // 1. 追従中（lastTrackedWrist が存在する場合）：
+  // ========================================================
   if (lastTrackedWrist) {
-    // 前フレームの右手位置に最も近い候補を選択
-    let closestHand = rightHandCandidates[0];
+    // 検出された全手の中から、前回の右手位置に最も近い手を探す
+    let closestHand = hands[0];
     let minDistance = Infinity;
 
-    for (let i = 0; i < rightHandCandidates.length; i++) {
-      const hand = rightHandCandidates[i];
+    for (let i = 0; i < hands.length; i++) {
+      const hand = hands[i];
       const wrist = hand[0];
       const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
       if (dist < minDistance) {
@@ -1795,22 +1801,60 @@ function selectRightHandLandmarks(results) {
         closestHand = hand;
       }
     }
-    return closestHand;
-  } else {
-    // 未追従時は、生カメラ画像でより左側（x座標が最小＝正面カメラにおける右手側）を選択
-    let leftmostHand = rightHandCandidates[0];
-    let minX = Infinity;
 
-    for (let i = 0; i < rightHandCandidates.length; i++) {
-      const hand = rightHandCandidates[i];
-      const wrist = hand[0];
-      if (wrist.x < minX) {
-        minX = wrist.x;
-        leftmostHand = hand;
-      }
+    // 【要件1: 距離リミッターの無条件適用】
+    // 候補数に関わらず、前回の右手位置から画面幅25%以上離れている手は絶対に採用しない（左手へのワープを100%遮断）
+    if (minDistance > MAX_WRIST_TRACK_DISTANCE) {
+      return null;
     }
-    return leftmostHand;
+
+    // 最も近い手が右手であるかナックル幾何判定（追従中ヒステリシス有効）
+    // （前回の右手位置の至近にある手であっても、明確に左手形状をしている場合は除外）
+    if (!isAnatomicallyRightHand(closestHand, true)) {
+      return null;
+    }
+
+    // 画面端スレスレの欠損セーフティ
+    if (closestHand[0].x < MIN_SAFETY_X) {
+      return null;
+    }
+
+    return closestHand;
   }
+
+  // ========================================================
+  // 2. 未追従状態（初回出現時または完全ロスト後の初回復帰時）：
+  // ========================================================
+  // ナックル外積により物理的な右手と判定される候補のみを抽出（左手はここで100%除外）
+  const rightCandidates = hands.filter((hand) => {
+    if (!isAnatomicallyRightHand(hand, false)) return false;
+    if (hand[0].x < MIN_SAFETY_X) return false;
+    return true;
+  });
+
+  if (rightCandidates.length === 0) {
+    return null;
+  }
+
+  // 右手候補が1つの場合はそれを採用
+  if (rightCandidates.length === 1) {
+    return rightCandidates[0];
+  }
+
+  // 複数候補がある場合は、生カメラ画像で最も左側（x座標が最小＝正面カメラにおける右手側）を選択
+  let leftmostHand = rightCandidates[0];
+  let minX = Infinity;
+
+  for (let i = 0; i < rightCandidates.length; i++) {
+    const hand = rightCandidates[i];
+    const wrist = hand[0];
+    if (wrist.x < minX) {
+      minX = wrist.x;
+      leftmostHand = hand;
+    }
+  }
+
+  return leftmostHand;
 }
 
 /**
@@ -1854,6 +1898,7 @@ function drawRawHandLandmarks(results) {
       lastRawLandmarks = null;
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       resetDebugMetrics();
+      updateAndDrawTapEffects(canvasCtx);
       return;
     }
   } else {
@@ -1895,7 +1940,34 @@ function drawRawHandLandmarks(results) {
   }
   const smoothedLandmarks = smoothedLandmarksPool;
 
-  // 1. 選択中指の平滑化ピクセル座標
+  // 1. 対象指以外の骨格（手のひら・他の指すべて）を事前キャッシュされた接続線で描画（毎フレームのfilter処理廃止）
+  const otherConnections = currentOtherConnections;
+
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+  canvasCtx.lineWidth = 1;
+  canvasCtx.lineCap = "round";
+  canvasCtx.lineJoin = "round";
+
+  otherConnections.forEach(([startIdx, endIdx]) => {
+    const p1 = smoothedLandmarks[startIdx];
+    const p2 = smoothedLandmarks[endIdx];
+
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(p1.x, p1.y);
+    canvasCtx.lineTo(p2.x, p2.y);
+    canvasCtx.stroke();
+  });
+
+  // 対象指以外の関節点（極小薄グレー）
+  smoothedLandmarks.forEach((pt, idx) => {
+    if (targetIndices.includes(idx)) return;
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    canvasCtx.fill();
+  });
+
+  // 2. 選択中指の平滑化ピクセル座標
   const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
   const smoothP2 = smoothedLandmarks[fingerConfig.p2Idx];
   const smoothP3 = smoothedLandmarks[fingerConfig.p3Idx];
@@ -1973,6 +2045,9 @@ function drawRawHandLandmarks(results) {
         const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
         const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
 
+        // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
+        spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
+
         // 次のターゲット指へ自動切り替えとガイド更新
         setTargetFinger(nextTarget.fingerKey);
         renderSongGuideUI();
@@ -1989,32 +2064,117 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. エフェクト負荷削減：マーカーは指定指先（TIP）のみに丸で表示
+  // 5. 指定された指の骨格描画（shadowBlurを撤去し、多層ストロークで高速・高鮮明に描画）
+  canvasCtx.save();
+  canvasCtx.lineCap = "round";
+  canvasCtx.lineJoin = "round";
+
+  // 共通骨格パス生成
+  const drawBonePath = () => {
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+    canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+    canvasCtx.lineTo(smoothP3.x, smoothP3.y);
+    canvasCtx.lineTo(smoothTip.x, smoothTip.y);
+  };
+
+  // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
+  canvasCtx.strokeStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
+  canvasCtx.lineWidth = 12.0;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 層2: 中間メインネオンライン（太さ 6.0px、高彩度ネオンカラー）
+  canvasCtx.strokeStyle = targetColor.stroke;
+  canvasCtx.lineWidth = 6.0;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 層3: 内側高輝度ホワイトコアライン（太さ 2.4px：芯が白く発光して立体感・視認性を極大化）
+  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+  canvasCtx.lineWidth = 2.4;
+  drawBonePath();
+  canvasCtx.stroke();
+
+  // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
+  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
+    // 層1: 外側ハロー
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
+    canvasCtx.fill();
+
+    // 層2: メインカラードット
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 5.0, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = targetColor.fill;
+    canvasCtx.fill();
+
+    // 層3: 内側白熱コア
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x, pt.y, 2.4, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = "#ffffff";
+    canvasCtx.fill();
+  });
+
+  // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
   drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
+  canvasCtx.restore();
+
+  // 7. 演奏時エフェクト（彗星ビーム）のアニメーション更新・描画
+  updateAndDrawTapEffects(canvasCtx);
 }
 
 /**
- * 対象指先端（TIP）のシンプルな丸マーカー描画（エフェクト負荷を削減したクリーンな丸表示）
- * @param {number} x 指先X座標
- * @param {number} y 指先Y座標
- * @param {object} color ターゲット色情報
+ * 対象指先端（TIP）のターゲットマーク描画（shadowBlur全廃・多層二重発光リング＋白熱コア）
+ * @param {number} x
+ * @param {number} y
+ * @param {object} color
  */
 function drawTipTargetMark(x, y, color) {
+  const strokeColor = color?.stroke || "rgba(0, 229, 255, 0.95)";
+  const haloColor = color?.halo || "rgba(0, 229, 255, 0.25)";
+  const accentColor = color?.accent || "rgba(0, 229, 255, 0.65)";
   const fillColor = color?.fill || "#00e5ff";
 
   canvasCtx.save();
 
-  // 外枠リング（白、線幅 2.5px、半径 14px）
+  // 外側の極太発光メインリング（多層化：太ハロー＋鮮明コア線）
+  // 層1: 外側発光ハローリング（半径13px、線幅 7.5px）
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, 14, 0, 2 * Math.PI);
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-  canvasCtx.lineWidth = 2.5;
+  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = haloColor;
+  canvasCtx.lineWidth = 7.5;
   canvasCtx.stroke();
 
-  // 中心ターゲット丸（指先カラー塗りつぶし、半径 8px）
+  // 層2: 外側メインリング（半径13px、線幅 2.8px）
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 13, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = strokeColor;
+  canvasCtx.lineWidth = 2.8;
+  canvasCtx.stroke();
+
+  // 内側の補助リング（半径8px、線幅 1.8px、事前計算accentColorで正規表現全廃）
   canvasCtx.beginPath();
   canvasCtx.arc(x, y, 8, 0, 2 * Math.PI);
+  canvasCtx.strokeStyle = accentColor;
+  canvasCtx.lineWidth = 1.8;
+  canvasCtx.stroke();
+
+  // 中心発光ドット（多層描画: 外輪ハロー 半径 7.0px + メイン 半径 4.6px + 白熱コア 半径 2.4px）
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 7.0, 0, 2 * Math.PI);
+  canvasCtx.fillStyle = haloColor;
+  canvasCtx.fill();
+
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 4.6, 0, 2 * Math.PI);
   canvasCtx.fillStyle = fillColor;
+  canvasCtx.fill();
+
+  canvasCtx.beginPath();
+  canvasCtx.arc(x, y, 2.4, 0, 2 * Math.PI);
+  canvasCtx.fillStyle = "#ffffff";
   canvasCtx.fill();
 
   canvasCtx.restore();
