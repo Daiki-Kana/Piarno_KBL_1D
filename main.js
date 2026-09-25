@@ -19,6 +19,20 @@ const inferenceTime = document.getElementById("inference-time");
 const handsCount = document.getElementById("hands-count");
 const camInfo = document.getElementById("cam-info");
 const errorBox = document.getElementById("error-box");
+const cameraErrorOverlay = document.getElementById("camera-error-overlay");
+const cameraErrorTitle = document.getElementById("camera-error-title");
+const cameraErrorMessage = document.getElementById("camera-error-message");
+const cameraErrorReloadBtn = document.getElementById("camera-error-reload-btn");
+const cameraErrorCloseBtn = document.getElementById("camera-error-close-btn");
+const cameraTapPrompt = document.getElementById("camera-tap-prompt");
+const cameraTapBtn = document.getElementById("camera-tap-btn");
+const inappBrowserModal = document.getElementById("inapp-browser-modal");
+const inappBrowserBadge = document.getElementById("inapp-browser-badge");
+const inappBrowserDesc = document.getElementById("inapp-browser-desc");
+const inappOpenExternalBtn = document.getElementById("inapp-open-external-btn");
+const inappCopyUrlBtn = document.getElementById("inapp-copy-url-btn");
+const inappContinueBtn = document.getElementById("inapp-continue-btn");
+const inappCopyToast = document.getElementById("inapp-copy-toast");
 const tipXVal = document.getElementById("tip-x-val");
 const tipYVal = document.getElementById("tip-y-val");
 const relYVal = document.getElementById("rel-y-val");
@@ -1414,9 +1428,25 @@ export async function loadTestDataCsv() {
 
 
 /**
- * 初期化処理
+ * 初期化処理（アプリ内ブラウザ検知を先行）
  */
 async function init() {
+  // アプリ内ブラウザ（LINE, X, Instagram等）の検知と誘導
+  const inAppInfo = detectInAppBrowser();
+  if (inAppInfo.isInApp) {
+    showInAppBrowserModal(inAppInfo, () => {
+      runInitPipeline();
+    });
+    return;
+  }
+
+  await runInitPipeline();
+}
+
+/**
+ * 実際の初期化パイプライン（モデル読込・カメラ起動）
+ */
+async function runInitPipeline() {
   resetDebugMetrics();
   updateStatus("モデル読込中...");
 
@@ -1432,7 +1462,32 @@ async function init() {
     await startFrontCamera();
   } catch (error) {
     console.error("初期化エラー:", error);
-    showError(error.message || "初期化に失敗しました");
+
+    // 自動再生制限による起動保留の場合は、白黒ミニマルなタップ起動プロンプトを表示
+    if (error.name === "AutoplayBlockedError") {
+      updateStatus("タップ待機中");
+      showCameraTapPrompt(async () => {
+        try {
+          updateStatus("カメラ再生中...");
+          await video.play();
+          updateCanvasResolution();
+          isPredicting = true;
+          schedulePredictLoop();
+          updateStatus("トラッキング中");
+        } catch (retryErr) {
+          console.error("タップ後のカメラ起動エラー:", retryErr);
+          const guidanceMsg = getCameraErrorMessage(retryErr);
+          showCameraErrorOverlay(guidanceMsg);
+          showError(retryErr.message || guidanceMsg);
+          updateStatus("エラー停止");
+        }
+      });
+      return;
+    }
+
+    const guidanceMsg = getCameraErrorMessage(error);
+    showCameraErrorOverlay(guidanceMsg);
+    showError(error.message || guidanceMsg);
     updateStatus("エラー停止");
   }
 }
@@ -1502,14 +1557,17 @@ async function initHandLandmarker() {
  * @param {MediaStreamConstraints} constraints
  */
 function getCompatibleUserMedia(constraints) {
-  if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
-    return navigator.mediaDevices.getUserMedia(constraints);
-  }
-
+  // セキュアコンテキスト（HTTPS / localhost）の先行検証
   if (!window.isSecureContext) {
-    throw new Error(
+    const secErr = new Error(
       "非セキュア環境 (HTTP) のためカメラがブロックされています。HTTPS (https://...) でアクセスしてください。"
     );
+    secErr.name = "SecurityError";
+    throw secErr;
+  }
+
+  if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+    return navigator.mediaDevices.getUserMedia(constraints);
   }
 
   const legacyGetUserMedia =
@@ -1524,7 +1582,9 @@ function getCompatibleUserMedia(constraints) {
     });
   }
 
-  throw new Error("このブラウザはカメラAPIに対応していません。");
+  const notSupportedErr = new Error("このブラウザはカメラAPIに対応していません。");
+  notSupportedErr.name = "NotSupportedError";
+  throw notSupportedErr;
 }
 
 /**
@@ -1533,42 +1593,52 @@ function getCompatibleUserMedia(constraints) {
 async function startFrontCamera() {
   let stream = null;
 
-  // 16:9の自然な画角比率を維持しつつ、60fps出力（720p / 540p / 360p）を優先探索
+  // 16:9比率を維持しつつ、画質よりもフレームレート（60fps）と低遅延（低負荷）を最優先する制約リスト
+  // 720p等の高解像度は推論負荷・描画ピクセル数が増大しfps低下を招くため後回しとし、540p/360pを最優先探索
   const tryConstraints = [
-    // 1. 720p (1280x720, 16:9) 60fps（室内暗化防止のためmin24fps）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 24 }
-      },
-      audio: false
-    },
-    // 2. 540p (960x540, 16:9) 60fps
+    // 1. 540p (960x540, 16:9) 60fps志向（画質と軽量性の最良バランス）
     {
       video: {
         facingMode: "user",
         width: { ideal: 960 },
         height: { ideal: 540 },
         aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 24 }
+        frameRate: { ideal: 60 }
       },
       audio: false
     },
-    // 3. 360p (640x360, 16:9) 60fps
+    // 2. 360p (640x360, 16:9) 60fps志向（超軽量・最高レスポンス重視）
     {
       video: {
         facingMode: "user",
         width: { ideal: 640 },
         height: { ideal: 360 },
         aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60, min: 24 }
+        frameRate: { ideal: 60 }
       },
       audio: false
     },
-    // 4. 720p (1280x720, 16:9) 任意fps
+    // 3. 360p (640x360, 16:9) 任意fps（低解像度・軽量最優先）
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 640 },
+        height: { ideal: 360 },
+        aspectRatio: { ideal: 16 / 9 }
+      },
+      audio: false
+    },
+    // 4. 540p (960x540, 16:9) 任意fps
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 960 },
+        height: { ideal: 540 },
+        aspectRatio: { ideal: 16 / 9 }
+      },
+      audio: false
+    },
+    // 5. 720p (1280x720, 16:9) 60fps志向（後回しフォールバック）
     {
       video: {
         facingMode: "user",
@@ -1579,67 +1649,102 @@ async function startFrontCamera() {
       },
       audio: false
     },
-    // 5. 16:9 比率優先（解像度任意）
+    // 6. インカメラ指定のみ（解像度・比率不問）
     {
       video: {
-        facingMode: "user",
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60 }
+        facingMode: "user"
       },
       audio: false
     },
+    // 7. 最終フォールバック（ハードウェアが返せる任意のビデオ）
     {
       video: true,
       audio: false
     }
   ];
 
+  let lastError = null;
   for (const constraints of tryConstraints) {
     try {
       stream = await getCompatibleUserMedia(constraints);
       if (stream) break;
     } catch (e) {
+      lastError = e;
+      // ユーザーによる権限拒否やセキュアコンテキスト違反は制約変更で解決しないため即座にスロー
+      if (
+        e.name === "NotAllowedError" ||
+        e.name === "PermissionDeniedError" ||
+        e.name === "SecurityError"
+      ) {
+        throw e;
+      }
       console.warn("制約でのカメラ起動失敗、次を試行:", e);
     }
   }
 
   if (!stream) {
-    throw new Error("インカメラの取得に失敗しました。カメラのアクセス許可を確認してください。");
+    throw lastError || new Error("インカメラの取得に失敗しました。カメラのアクセス許可を確認してください。");
   }
 
   currentStream = stream;
   video.srcObject = currentStream;
 
-  // ハードウェアがサポートする最大フレームレートを強制適用
+  // ハードウェアがサポートする最大フレームレートの適用を試みる（iOS Safariなど非対応環境では安全にスキップ）
   const track = stream.getVideoTracks()[0];
   if (track) {
-    if (typeof track.getCapabilities === "function") {
-      const caps = track.getCapabilities();
-      console.log("[CAM CAPABILITIES]", caps);
-      const targetFps = (caps.frameRate && caps.frameRate.max) ? Math.min(60, caps.frameRate.max) : 60;
-      try {
-        await track.applyConstraints({
-          frameRate: { ideal: targetFps }
-        });
-      } catch (err) {
-        console.warn("FPS制約適用スキップ:", err);
+    try {
+      if (typeof track.getCapabilities === "function") {
+        const caps = track.getCapabilities();
+        console.log("[CAM CAPABILITIES]", caps);
+        const targetFps = caps.frameRate && caps.frameRate.max ? Math.min(60, caps.frameRate.max) : 60;
+        if (typeof track.applyConstraints === "function") {
+          await track.applyConstraints({
+            frameRate: { ideal: targetFps }
+          });
+        }
       }
+    } catch (err) {
+      console.warn("FPS制約適用スキップ（端末非対応または制約適用不可）:", err);
     }
 
     // 実効カメラ設定（解像度・fps）をHUDに反映
-    if (typeof track.getSettings === "function") {
-      const settings = track.getSettings();
-      const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "60fps";
-      const resLabel = settings.height ? `${settings.height}p` : "-";
-      camInfo.textContent = `FRONT (${resLabel} ${fpsLabel})`.trim();
+    try {
+      if (typeof track.getSettings === "function") {
+        const settings = track.getSettings();
+        const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "60fps";
+        const resLabel = settings.height ? `${settings.height}p` : "-";
+        if (camInfo) {
+          camInfo.textContent = `FRONT (${resLabel} ${fpsLabel})`.trim();
+        }
+      }
+    } catch (settingErr) {
+      console.warn("カメラ設定取得スキップ:", settingErr);
     }
   }
 
-  await new Promise((resolve) => {
-    video.onloadedmetadata = () => {
-      video.play();
-      resolve();
+  await new Promise((resolve, reject) => {
+    video.onloadedmetadata = async () => {
+      try {
+        await video.play();
+        resolve();
+      } catch (playErr) {
+        console.warn("[CAM] video.play() 自動再生エラー:", playErr);
+        // 自動再生ポリシー制限（NotAllowedError や User interaction 必須）の場合はタップ起動フォールバックを要求
+        const isAutoplayBlocked =
+          playErr.name === "NotAllowedError" ||
+          playErr.name === "AbortError" ||
+          (playErr.message && playErr.message.toLowerCase().includes("interact"));
+
+        if (isAutoplayBlocked) {
+          const autoErr = new Error("画面をタップしてカメラを開始してください");
+          autoErr.name = "AutoplayBlockedError";
+          reject(autoErr);
+          return;
+        }
+        reject(playErr);
+      }
     };
+    video.onerror = (err) => reject(err);
   });
 
   // Canvas内部解像度をビデオ解像度に完全一致させる
@@ -1943,32 +2048,7 @@ function drawRawHandLandmarks(results) {
   }
   const smoothedLandmarks = smoothedLandmarksPool;
 
-  // 1. 対象指以外の骨格（手のひら・他の指すべて）を事前キャッシュされた接続線で描画（毎フレームのfilter処理廃止）
-  const otherConnections = currentOtherConnections;
-
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-  canvasCtx.lineWidth = 1;
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
-
-  otherConnections.forEach(([startIdx, endIdx]) => {
-    const p1 = smoothedLandmarks[startIdx];
-    const p2 = smoothedLandmarks[endIdx];
-
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(p1.x, p1.y);
-    canvasCtx.lineTo(p2.x, p2.y);
-    canvasCtx.stroke();
-  });
-
-  // 対象指以外の関節点（極小薄グレー）
-  smoothedLandmarks.forEach((pt, idx) => {
-    if (targetIndices.includes(idx)) return;
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
-    canvasCtx.fill();
-  });
+  // 1. 対象指以外の骨格・関節点描画は非表示（視覚ノイズ排除および描画負荷削減）
 
   // 2. 選択中指の平滑化ピクセル座標
   const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
@@ -2257,11 +2337,208 @@ function updateStatus(msg) {
 }
 
 /**
- * エラー表示
+ * カメラエラーの種別に応じたユーザー向けガイダンス文言を生成
+ * @param {Error|DOMException} error
+ * @returns {string}
+ */
+function getCameraErrorMessage(error) {
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    return "カメラはHTTPS環境でのみ動作します。https:// または localhost でアクセスしてください。";
+  }
+
+  const errName = error?.name || "";
+  const errMsg = error?.message || "";
+
+  if (
+    errName === "NotAllowedError" ||
+    errName === "PermissionDeniedError" ||
+    errMsg.includes("許可") ||
+    errMsg.includes("NotAllowed")
+  ) {
+    return "カメラの利用が許可されていません。ブラウザのアドレスバーまたは端末の『設定』からカメラを許可し、ページを再読み込みしてください。";
+  }
+
+  if (
+    errName === "NotReadableError" ||
+    errName === "TrackStartError" ||
+    errMsg.includes("使用中") ||
+    errMsg.includes("NotReadable")
+  ) {
+    return "カメラを起動できませんでした。他のアプリ（通話・カメラ等）が使用中の可能性があります。他アプリを終了して再読み込みしてください。";
+  }
+
+  if (
+    errName === "OverconstrainedError" ||
+    errName === "ConstraintNotSatisfiedError"
+  ) {
+    return "カメラの初期化に失敗しました。標準設定で再試行します。";
+  }
+
+  return "カメラの初期化に失敗しました。標準設定で再試行します。";
+}
+
+/**
+ * カメラエラー・ガイダンス通知オーバーレイの表示（白黒ミニマル）
+ * @param {string} message
+ * @param {string} [title]
+ */
+function showCameraErrorOverlay(message, title = "カメラを起動できません") {
+  if (cameraErrorTitle) cameraErrorTitle.textContent = title;
+  if (cameraErrorMessage) cameraErrorMessage.textContent = message;
+  if (cameraErrorOverlay) {
+    cameraErrorOverlay.classList.remove("hidden");
+  }
+}
+
+/**
+ * エラー表示（デバッグパネル用）
  */
 function showError(msg) {
-  errorBox.textContent = `ERROR: ${msg}`;
-  errorBox.classList.remove("hidden");
+  if (errorBox) {
+    errorBox.textContent = `ERROR: ${msg}`;
+    errorBox.classList.remove("hidden");
+  }
+}
+
+// カメラエラーオーバーレイのボタンハンドラ
+if (cameraErrorReloadBtn) {
+  cameraErrorReloadBtn.addEventListener("click", () => {
+    window.location.reload();
+  });
+}
+if (cameraErrorCloseBtn) {
+  cameraErrorCloseBtn.addEventListener("click", () => {
+    if (cameraErrorOverlay) {
+      cameraErrorOverlay.classList.add("hidden");
+    }
+  });
+}
+
+/**
+ * アプリ内ブラウザ（WebView）の検出
+ * @returns {{ isInApp: boolean, isLine: boolean, appName: string }}
+ */
+function detectInAppBrowser() {
+  const ua = (navigator.userAgent || navigator.vendor || window.opera || "").toLowerCase();
+  const isLine = ua.includes("line/");
+  const isTwitter = ua.includes("twitter") || ua.includes("tweetie");
+  const isInstagram = ua.includes("instagram");
+  const isFacebook = ua.includes("fb_iab") || ua.includes("fb4a") || ua.includes("fbios");
+  const isTikTok = ua.includes("musical_ly") || ua.includes("bytelocale");
+
+  let appName = "";
+  if (isLine) appName = "LINE";
+  else if (isTwitter) appName = "X (Twitter)";
+  else if (isInstagram) appName = "Instagram";
+  else if (isFacebook) appName = "Facebook";
+  else if (isTikTok) appName = "TikTok";
+
+  return {
+    isInApp: Boolean(appName),
+    isLine,
+    appName: appName || "アプリ内ブラウザ"
+  };
+}
+
+/**
+ * アプリ内ブラウザ誘導モーダルの表示（白黒ミニマル）
+ * @param {{ isInApp: boolean, isLine: boolean, appName: string }} inAppInfo
+ * @param {() => void} [onContinue]
+ */
+function showInAppBrowserModal(inAppInfo, onContinue) {
+  if (!inappBrowserModal) return;
+
+  if (inappBrowserBadge) {
+    inappBrowserBadge.textContent = `${inAppInfo.appName.toUpperCase()} DETECTED`;
+  }
+  if (inappBrowserDesc) {
+    inappBrowserDesc.innerHTML = `<strong>${inAppInfo.appName}</strong> のアプリ内ブラウザでは、セキュリティ制限によりカメラが動作しない場合があります。<br />Safari（iOS）または Chrome（Android）の標準ブラウザでお試しください。`;
+  }
+
+  // LINE環境の場合は外部ブラウザで直接開くURLパラメータ（?openExternalBrowser=1）を設定
+  if (inAppInfo.isLine && inappOpenExternalBtn) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("openExternalBrowser", "1");
+    inappOpenExternalBtn.href = url.toString();
+    inappOpenExternalBtn.classList.remove("hidden");
+  }
+
+  // URLコピーボタン
+  if (inappCopyUrlBtn) {
+    inappCopyUrlBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        showCopyToast();
+      } catch {
+        const dummy = document.createElement("input");
+        dummy.value = window.location.href;
+        document.body.appendChild(dummy);
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+        showCopyToast();
+      }
+    };
+  }
+
+  // このまま試すボタン
+  if (inappContinueBtn) {
+    inappContinueBtn.onclick = () => {
+      inappBrowserModal.classList.add("hidden");
+      if (typeof onContinue === "function") {
+        onContinue();
+      }
+    };
+  }
+
+  inappBrowserModal.classList.remove("hidden");
+}
+
+/**
+ * コピー完了トーストの表示
+ */
+function showCopyToast() {
+  if (!inappCopyToast) return;
+  inappCopyToast.classList.remove("hidden");
+  setTimeout(() => {
+    inappCopyToast.classList.add("hidden");
+  }, 2500);
+}
+
+let tapPromptCallback = null;
+
+/**
+ * タップ起動フォールバックプロンプトの表示（白黒ミニマル）
+ * @param {() => Promise<void>} onTap
+ */
+function showCameraTapPrompt(onTap) {
+  tapPromptCallback = onTap;
+  if (cameraTapPrompt) {
+    cameraTapPrompt.classList.remove("hidden");
+  }
+}
+
+/**
+ * タップ起動フォールバックプロンプトの非表示
+ */
+function hideCameraTapPrompt() {
+  tapPromptCallback = null;
+  if (cameraTapPrompt) {
+    cameraTapPrompt.classList.add("hidden");
+  }
+}
+
+// タップ起動ボタンのハンドラ
+if (cameraTapBtn) {
+  cameraTapBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    ensureAudioContext();
+    if (typeof tapPromptCallback === "function") {
+      const cb = tapPromptCallback;
+      hideCameraTapPrompt();
+      await cb();
+    }
+  });
 }
 
 // 解像度同期イベント

@@ -366,4 +366,288 @@ html, body {
   user-select: none;
 }
 
+/* ==========================================================================
+   カメラエラー・ガイダンス通知オーバーレイ（白黒ミニマル）
+   ========================================================================== */
+.camera-error-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 400;
+  padding: 20px;
+}
+
+.camera-error-modal {
+  background-color: #111111;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  max-width: 420px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.camera-error-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #000000;
+  background-color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 2px;
+  margin-bottom: 12px;
+}
+
+.camera-error-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.camera-error-message {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #cccccc;
+  margin-bottom: 24px;
+  word-break: break-word;
+}
+
+.camera-error-actions {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+}
+
+.camera-error-btn {
+  flex: 1;
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+}
+
+.camera-error-btn:hover {
+  background-color: #e0e0e0;
+  border-color: #e0e0e0;
+}
+
+.camera-error-btn-secondary {
+  background-color: transparent;
+  color: #888888;
+  border: 1px solid #444444;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+}
+
+.camera-error-btn-secondary:hover {
+  background-color: #222222;
+  color: #ffffff;
+  border-color: #666666;
+}
+
+/* ==========================================================================
+   タップ起動フォールバック（Autoplay Policy・低電力モード対策・白黒ミニマル）
+   ========================================================================== */
+.camera-tap-prompt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 380;
+  pointer-events: auto;
+}
+
+.camera-tap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
+  border-radius: 30px;
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.camera-tap-btn:hover,
+.camera-tap-btn:active {
+  background-color: #000000;
+  color: #ffffff;
+  border-color: #ffffff;
+  transform: scale(1.04);
+}
+
+.camera-tap-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ==========================================================================
+   アプリ内ブラウザ（WebView）誘導モーダル（白黒ミニマル）
+   ========================================================================== */
+.inapp-browser-modal {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 450;
+  padding: 20px;
+}
+
+.inapp-browser-card {
+  background-color: #111111;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  max-width: 440px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.inapp-browser-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #000000;
+  background-color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 2px;
+  margin-bottom: 12px;
+}
+
+.inapp-browser-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.inapp-browser-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #cccccc;
+  margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.inapp-browser-actions {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+}
+
+.inapp-btn {
+  width: 100%;
+  background-color: #222222;
+  color: #ffffff;
+  border: 1px solid #444444;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.inapp-btn:hover {
+  background-color: #333333;
+  border-color: #666666;
+}
+
+.inapp-btn-primary {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+.inapp-btn-primary:hover {
+  background-color: #e0e0e0;
+  border-color: #e0e0e0;
+}
+
+.inapp-btn-secondary {
+  background-color: transparent;
+  color: #888888;
+  border-color: #333333;
+}
+
+.inapp-btn-secondary:hover {
+  background-color: #1a1a1a;
+  color: #cccccc;
+  border-color: #555555;
+}
+
+.inapp-copy-toast {
+  align-self: center;
+  margin-top: 12px;
+  background-color: #ffffff;
+  color: #000000;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+
 

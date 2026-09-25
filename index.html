@@ -45,6 +45,49 @@
         <div class="clear-subtitle">100% CLEAR</div>
       </div>
 
+      <!-- カメラエラー・ガイダンス通知オーバーレイ（白黒ミニマル） -->
+      <div id="camera-error-overlay" class="camera-error-overlay hidden">
+        <div class="camera-error-modal">
+          <div class="camera-error-badge">CAMERA ERROR</div>
+          <div id="camera-error-title" class="camera-error-title">カメラを起動できません</div>
+          <p id="camera-error-message" class="camera-error-message">
+            カメラの利用が許可されていません。ブラウザのアドレスバーまたは端末の『設定』からカメラを許可し、ページを再読み込みしてください。
+          </p>
+          <div class="camera-error-actions">
+            <button id="camera-error-reload-btn" class="camera-error-btn">ページを再読み込み</button>
+            <button id="camera-error-close-btn" class="camera-error-btn-secondary">閉じる</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- タップ起動フォールバック（Autoplay Policy対策・白黒ミニマル） -->
+      <div id="camera-tap-prompt" class="camera-tap-prompt hidden">
+        <button id="camera-tap-btn" class="camera-tap-btn" aria-label="カメラを開始">
+          <span class="camera-tap-icon">▶</span>
+          <span class="camera-tap-text">タップしてカメラを開始</span>
+        </button>
+      </div>
+
+      <!-- アプリ内ブラウザ（WebView）誘導モーダル（白黒ミニマル） -->
+      <div id="inapp-browser-modal" class="inapp-browser-modal hidden">
+        <div class="inapp-browser-card">
+          <div class="inapp-browser-badge" id="inapp-browser-badge">IN-APP BROWSER DETECTED</div>
+          <div class="inapp-browser-title">標準ブラウザで開いてください</div>
+          <p class="inapp-browser-desc" id="inapp-browser-desc">
+            LINEやXなどのアプリ内ブラウザでは、セキュリティ制限によりカメラが動作しない場合があります。<br />
+            Safari（iOS）または Chrome（Android）でお試しください。
+          </p>
+          <div class="inapp-browser-actions">
+            <a id="inapp-open-external-btn" class="inapp-btn inapp-btn-primary hidden" href="#" target="_blank" rel="noopener noreferrer">
+              外部ブラウザで開く
+            </a>
+            <button id="inapp-copy-url-btn" class="inapp-btn">URLをコピー</button>
+            <button id="inapp-continue-btn" class="inapp-btn inapp-btn-secondary">このまま試す</button>
+          </div>
+          <div id="inapp-copy-toast" class="inapp-copy-toast hidden">URLをクリップボードにコピーしました</div>
+        </div>
+      </div>
+
 
       <!-- デバッグHUD（左下） -->
       <div id="debug-panel" class="debug-panel">
