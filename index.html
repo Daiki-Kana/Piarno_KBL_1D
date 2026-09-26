@@ -60,6 +60,24 @@
           </div>
         </div>
       </div>
+      <!-- 起動時：楽曲選択＆スタートモーダル（シンプル・白黒ミニマル） -->
+      <div id="start-modal" class="start-modal">
+        <div class="start-card">
+          <div class="start-title">曲を選択</div>
+          <div class="start-song-list">
+            <button class="start-song-item selected" data-song="ode_to_joy">
+              <span class="start-song-name">よろこびのうた</span>
+            </button>
+            <button class="start-song-item" data-song="mary_had_a_little_lamb">
+              <span class="start-song-name">メリーさんのひつじ</span>
+            </button>
+          </div>
+          <button id="start-play-btn" class="start-play-btn">
+            <span id="start-play-text">スタート</span>
+          </button>
+        </div>
+      </div>
+
 
       <!-- タップ起動フォールバック（Autoplay Policy対策・白黒ミニマル） -->
       <div id="camera-tap-prompt" class="camera-tap-prompt hidden">

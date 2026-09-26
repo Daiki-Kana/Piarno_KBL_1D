@@ -231,8 +231,9 @@ liftRyThreshold = hitRyThreshold - 0.03
    hitRyThreshold = maxAirRy + (medianHitRy - maxAirRy) × γ
    ```
 
-   - 通常指（THUMB, INDEX, MIDDLE, PINKY）: `γ = 0.45`
-   - 薬指（RING）: 可動域が狭いため `γ = 0.38`（打鍵マージンを緩和して叩きやすく調整）
+   - 通常指（INDEX, MIDDLE, PINKY）: `γ = 0.45`
+   - 親指（THUMB）: 机面への垂直変位が小さいため `γ = 0.30`（反応感度を向上）
+   - 薬指（RING）: 他指（中指・小指）との連動によるつられ下がり誤検知を防ぐため `γ = 0.46`（誤検知防止で引き上げ調整）
 4. **リフト閾値（liftRyThreshold）**:
 
    ```text

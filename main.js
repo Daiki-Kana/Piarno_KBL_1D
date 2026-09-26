@@ -26,6 +26,10 @@ const cameraErrorReloadBtn = document.getElementById("camera-error-reload-btn");
 const cameraErrorCloseBtn = document.getElementById("camera-error-close-btn");
 const cameraTapPrompt = document.getElementById("camera-tap-prompt");
 const cameraTapBtn = document.getElementById("camera-tap-btn");
+const audioStartBanner = document.getElementById("audio-start-banner");
+const startModal = document.getElementById("start-modal");
+const startPlayBtn = document.getElementById("start-play-btn");
+const startPlayText = document.getElementById("start-play-text");
 const inappBrowserModal = document.getElementById("inapp-browser-modal");
 const inappBrowserBadge = document.getElementById("inapp-browser-badge");
 const inappBrowserDesc = document.getElementById("inapp-browser-desc");
@@ -728,8 +732,9 @@ export function showClearNotification(onComplete) {
 /**
  * 楽曲の切り替え
  * @param {string} songId
+ * @param {boolean} withCountdown カウントダウンを開始するかどうか（起動時は手動制御）
  */
-export function selectSong(songId) {
+export function selectSong(songId, withCountdown = true) {
   if (!SONGS[songId]) return;
 
   // クリア演出中であればタイマーとオーバーレイをリセット
@@ -748,9 +753,17 @@ export function selectSong(songId) {
   currentSequence = SONGS[songId].sequence;
   currentSongStep = 0;
 
-  // メニューのアクティブクラス更新
+  // 右上ポップアップメニューのアクティブクラス更新
   document.querySelectorAll(".song-menu-item").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.song === songId);
+  });
+
+  // 起動モーダルの選択状態も同期
+  document.querySelectorAll(".start-song-item").forEach((btn) => {
+    const isSelected = btn.dataset.song === songId;
+    btn.classList.toggle("selected", isSelected);
+    const check = btn.querySelector(".start-song-check");
+    if (check) check.textContent = isSelected ? "●" : "○";
   });
 
   // メニューを閉じる
@@ -761,10 +774,12 @@ export function selectSong(songId) {
   setTargetFinger(currentSequence[0].fingerKey);
   renderSongGuideUI();
 
-  // カウントダウン開始
-  startCountdown(() => {
-    console.log(`[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`);
-  });
+  if (withCountdown) {
+    // カウントダウン開始
+    startCountdown(() => {
+      console.log(`[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`);
+    });
+  }
 }
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
@@ -826,7 +841,7 @@ export function updateCachedConnections(fingerKey) {
 export const fingerThresholdModels = {
   THUMB: { hitRy: 0.55, liftRy: 0.40, samples: 0 },
   MIDDLE: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
-  RING: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
+  RING: { hitRy: 0.82, liftRy: 0.57, samples: 0 },
   PINKY: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
   INDEX: { hitRy: 0.80, liftRy: 0.55, samples: 0 }
 };
@@ -1328,9 +1343,9 @@ function trainModelForFinger(fingerKey) {
 
     if (medianHitRy > maxAirRy) {
       // 空中最大と打鍵中央値の中間点に打鍵閾値を設定
-      // 薬指（RING）は可動域が狭いため打鍵マージンを緩和（0.38）
-      // 親指（THUMB）は机面への垂直変位が小さいためさらに緩和（0.30）して反応感度を向上
-      const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.38 : 0.45);
+      // 薬指（RING）は他指（中指・小指）との連動によるつられ下がり誤検知を防ぐため、やや高め（0.46）に設定
+      // 親指（THUMB）は机面への垂直変位が小さいため緩和（0.30）して反応感度を向上
+      const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.46 : 0.45);
       hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
 
       // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
@@ -1343,8 +1358,8 @@ function trainModelForFinger(fingerKey) {
       liftTh = hitTh - 0.03;
     }
   } else {
-    // 打鍵サンプルが0件の場合の安全マージン（親指は垂直変位が小さいため0.10、他指は0.18）
-    const safetyMargin = fingerKey === "THUMB" ? 0.10 : 0.18;
+    // 打鍵サンプルが0件の場合の安全マージン（親指は垂直変位が小さいため0.10、薬指は誤検知防止で0.20、他指は0.18）
+    const safetyMargin = fingerKey === "THUMB" ? 0.10 : (fingerKey === "RING" ? 0.20 : 0.18);
     hitTh = maxAirRy + safetyMargin;
     liftTh = hitTh - 0.03;
   }
@@ -1479,6 +1494,10 @@ export async function loadTestDataCsv() {
 }
 
 
+// 先行MediaPipeモデルロード用Promise
+let handLandmarkerPromise = null;
+let selectedStartSongId = "ode_to_joy";
+
 /**
  * 初期化処理（アプリ内ブラウザ検知を先行）
  */
@@ -1487,33 +1506,123 @@ async function init() {
   const inAppInfo = detectInAppBrowser();
   if (inAppInfo.isInApp) {
     showInAppBrowserModal(inAppInfo, () => {
-      runInitPipeline();
+      prepareApp();
     });
     return;
   }
 
-  await runInitPipeline();
+  prepareApp();
 }
 
 /**
- * 実際の初期化パイプライン（モデル読込・カメラ起動）
+ * 起動前準備（モデル読込の先行開始と楽曲選択モーダルのセットアップ）
  */
-async function runInitPipeline() {
+function prepareApp() {
   resetDebugMetrics();
-  updateStatus("モデル読込中...");
+  updateStatus("曲を選択してください");
 
   // テスト用CSVの非同期読み込み（未配置でもブロックせず実行）
   loadTestDataCsv();
 
-  try {
-    // 1. MediaPipe Hand Landmarker の読み込み
-    await initHandLandmarker();
+  // MediaPipe Hand Landmarker の読み込みを先行バックグラウンド実行（スタート押下時の待ち時間を極小化）
+  if (!handLandmarkerPromise) {
+    handLandmarkerPromise = initHandLandmarker().catch((err) => {
+      console.warn("先行モデル読込エラー（スタート時に再試行）:", err);
+      handLandmarkerPromise = null;
+    });
+  }
 
-    // 2. インカメラ（フロントカメラ）の自動起動
+  // 音声バナーは初期状態では隠す（スタートボタン押下で確実に有効化されるため）
+  if (audioStartBanner) {
+    audioStartBanner.classList.add("hidden");
+  }
+
+  // 起動モーダルのイベント初期化
+  setupStartModal();
+}
+
+/**
+ * 起動時楽曲選択モーダルのイベント登録
+ */
+function setupStartModal() {
+  if (!startModal) return;
+
+  const startSongItems = document.querySelectorAll(".start-song-item");
+  startSongItems.forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const songId = item.dataset.song;
+      if (!songId || !SONGS[songId]) return;
+
+      selectedStartSongId = songId;
+
+      // 選択状態のUI更新
+      startSongItems.forEach((btn) => {
+        const isSelected = btn.dataset.song === songId;
+        btn.classList.toggle("selected", isSelected);
+        const check = btn.querySelector(".start-song-check");
+        if (check) check.textContent = isSelected ? "●" : "○";
+      });
+
+      // ターゲット指やガイドUIも背景側で事前に反映しておく
+      selectSong(songId, false);
+    });
+  });
+
+  if (startPlayBtn) {
+    startPlayBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await handleStartPlay();
+    });
+  }
+}
+
+/**
+ * 「演奏を開始」ボタン押下時の実行処理（音声アンロック・カメラ起動・カウントダウン）
+ */
+async function handleStartPlay() {
+  if (!startPlayBtn) return;
+
+  // ボタンをローディング状態にして二重タップを防止
+  startPlayBtn.disabled = true;
+  if (startPlayText) startPlayText.textContent = "カメラ・AI起動中...";
+
+  // 1. ユーザー操作（タップ）の同期スタック内で Web Audio API を即時有効化
+  ensureAudioContext();
+
+  // 音声バナーは不要なので非表示を確実に維持
+  if (audioStartBanner) {
+    audioStartBanner.classList.add("hidden");
+  }
+
+  try {
+    updateStatus("モデル読込待機中...");
+    if (handLandmarkerPromise) {
+      await handLandmarkerPromise;
+    } else {
+      await initHandLandmarker();
+    }
+
+    // 選択された曲をセット（カウントダウンはカメラ起動後に行うため false）
+    selectSong(selectedStartSongId, false);
+
+    // 2. インカメラの起動（ユーザー操作コンテキスト内での実行）
     updateStatus("インカメラ起動中...");
     await startFrontCamera();
+
+    // 3. 起動モーダルを非表示
+    if (startModal) {
+      startModal.classList.add("hidden");
+    }
+
+    // 4. カウントダウン（3・2・1・START!）を開始して演奏へ移行
+    startCountdown(() => {
+      console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
+    });
   } catch (error) {
-    console.error("初期化エラー:", error);
+    console.error("起動エラー:", error);
+    startPlayBtn.disabled = false;
+    if (startPlayText) startPlayText.textContent = "スタート";
 
     // 自動再生制限による起動保留の場合は、白黒ミニマルなタップ起動プロンプトを表示
     if (error.name === "AutoplayBlockedError") {
@@ -1525,6 +1634,10 @@ async function runInitPipeline() {
           updateCanvasResolution();
           isPredicting = true;
           schedulePredictLoop();
+          if (startModal) startModal.classList.add("hidden");
+          startCountdown(() => {
+            console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
+          });
           updateStatus("トラッキング中");
         } catch (retryErr) {
           console.error("タップ後のカメラ起動エラー:", retryErr);
@@ -2669,7 +2782,6 @@ if (songSelectBtn && songSelectMenu) {
 }
 
 // 初回オーディオ開始バナーのクリックイベント
-const audioStartBanner = document.getElementById("audio-start-banner");
 if (audioStartBanner) {
   audioStartBanner.addEventListener("click", () => {
     ensureAudioContext();

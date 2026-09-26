@@ -649,5 +649,130 @@ html, body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ==========================================================================
+   起動時：楽曲選択＆スタートモーダル（シンプル・白黒ミニマル）
+   ========================================================================== */
+.start-modal {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 390;
+  padding: 16px;
+  opacity: 1;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
 
+.start-modal.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.start-card {
+  background-color: #111111;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  max-width: 300px;
+  width: 100%;
+  padding: 22px 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.start-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #888888;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.start-song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+.start-song-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #181818;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 11px 14px;
+  color: #aaaaaa;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+  user-select: none;
+  width: 100%;
+}
+
+.start-song-item:hover {
+  background-color: #222222;
+  color: #ffffff;
+  border-color: #444444;
+}
+
+.start-song-item.selected {
+  background-color: #262626;
+  border-color: #ffffff;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.start-song-name {
+  letter-spacing: 0.5px;
+}
+
+.start-play-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.start-play-btn:hover {
+  background-color: #e0e0e0;
+  border-color: #e0e0e0;
+  transform: translateY(-1px);
+}
+
+.start-play-btn:active {
+  transform: translateY(0);
+  background-color: #cccccc;
+}
+
+.start-play-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
 
