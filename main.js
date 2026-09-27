@@ -50,6 +50,11 @@ const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
 const songProgressBadge = document.getElementById("song-progress-badge");
 const debugPanel = document.getElementById("debug-panel");
+const modePlayBtn = document.getElementById("mode-play-btn");
+const modeTrackingBtn = document.getElementById("mode-tracking-btn");
+
+// 動作モード: "PLAY" (演奏モード) | "TRACKING" (トラッキング表示モード)
+let currentAppMode = "PLAY";
 
 // デバッグHUDの表示状態フラグ（非表示時は毎フレームのDOM書き込み・文字列演算をスキップ）
 let isDebugPanelVisible = false;
@@ -2131,6 +2136,99 @@ function selectRightHandLandmarks(results) {
 }
 
 /**
+ * 動作モードの切り替え（演奏モード / トラッキング表示モード）
+ * @param {"PLAY" | "TRACKING"} mode
+ */
+function setAppMode(mode) {
+  currentAppMode = mode;
+
+  if (mode === "PLAY") {
+    document.body.classList.remove("mode-tracking");
+    if (modePlayBtn) modePlayBtn.classList.add("active");
+    if (modeTrackingBtn) modeTrackingBtn.classList.remove("active");
+    renderSongGuideUI();
+    console.log("[MODE] 演奏モードに切り替えました");
+  } else {
+    document.body.classList.add("mode-tracking");
+    if (modePlayBtn) modePlayBtn.classList.remove("active");
+    if (modeTrackingBtn) modeTrackingBtn.classList.add("active");
+    // 打鍵判定状態を安全にリセット
+    tapState = "IDLE";
+    updateStateHud("IDLE", false);
+    if (isDebugPanelVisible) {
+      targetFingerVal.textContent = "トラッキング表示 (指指定なし)";
+      targetTapProgress.textContent = "-";
+      tipXVal.textContent = "-";
+      tipYVal.textContent = "-";
+      relYVal.textContent = "-";
+      thVal.textContent = "-";
+    }
+    console.log("[MODE] トラッキング表示モードに切り替えました (演奏指指定なし・骨格ラインのみ)");
+  }
+}
+
+/**
+ * 手全体の骨格ラインを白い線で薄めに描画（両モード共通）
+ * 1 Euro Filter で適応平滑化された全21関節点を使用し、ブレやチラつきを排除
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<{x: number, y: number}>} landmarks - 平滑化済み21関節ピクセル座標配列
+ * @param {boolean} isTrackingMode - トラッキング表示モード単体かどうかのフラグ
+ */
+function drawHandSkeleton(ctx, landmarks, isTrackingMode = false) {
+  if (!landmarks || landmarks.length < 21) return;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // 1. 骨格接続ライン（薄い白色線）
+  ctx.beginPath();
+  for (let i = 0; i < HAND_CONNECTIONS.length; i++) {
+    const [startIdx, endIdx] = HAND_CONNECTIONS[i];
+    const pStart = landmarks[startIdx];
+    const pEnd = landmarks[endIdx];
+    if (pStart && pEnd) {
+      ctx.moveTo(pStart.x, pStart.y);
+      ctx.lineTo(pEnd.x, pEnd.y);
+    }
+  }
+
+  // トラッキング表示モードでは視認性を高め、演奏モードではターゲット指を邪魔しない薄い白色に設定
+  ctx.strokeStyle = isTrackingMode ? "rgba(255, 255, 255, 0.55)" : "rgba(255, 255, 255, 0.28)";
+  ctx.lineWidth = isTrackingMode ? 2.0 : 1.6;
+  ctx.stroke();
+
+  // 2. 全21関節点（微小な白半透明ドット）
+  const dotRadius = isTrackingMode ? 2.5 : 1.8;
+  ctx.fillStyle = isTrackingMode ? "rgba(255, 255, 255, 0.75)" : "rgba(255, 255, 255, 0.4)";
+  for (let i = 0; i < 21; i++) {
+    const pt = landmarks[i];
+    if (pt) {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, dotRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  // 3. トラッキング表示モード時：全5本の指先に白いサークルを表示
+  if (isTrackingMode) {
+    const tipIndices = [4, 8, 12, 16, 20];
+    for (let k = 0; k < tipIndices.length; k++) {
+      const tip = landmarks[tipIndices[k]];
+      if (tip) {
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 4.5, 0, 2 * Math.PI);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
  * 手の全21ランドマークの適応平滑化描画、打鍵・リフト用特徴量の算出
  * 手首・手のひら・全指先を独立した 1 Euro Filter で常時平滑化し、ジッターと飛びを完全排除
  * @param {object} results
@@ -2213,7 +2311,14 @@ function drawRawHandLandmarks(results) {
   }
   const smoothedLandmarks = smoothedLandmarksPool;
 
-  // 1. 対象指以外の骨格・関節点描画は非表示（視覚ノイズ排除および描画負荷削減）
+  // 1. 手全体の骨格ラインを白い線で薄めに描画（演奏モード・トラッキング表示モードの両モード共通）
+  drawHandSkeleton(canvasCtx, smoothedLandmarks, currentAppMode === "TRACKING");
+
+  // トラッキング表示モード時は演奏指の指定・打鍵判定・発音を行わず、トラッキングライン表示のみで終了
+  if (currentAppMode === "TRACKING") {
+    updateAndDrawTapEffects(canvasCtx);
+    return;
+  }
 
   // 2. 選択中指の平滑化ピクセル座標
   const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
@@ -2792,5 +2897,22 @@ if (audioStartBanner) {
 // 初期ターゲット指（よろこびのうた 第1音: 中指 3 ミ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
+
+// モード切り替えボタン（演奏モード / トラッキング表示モード）
+if (modePlayBtn) {
+  modePlayBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    ensureAudioContext();
+    setAppMode("PLAY");
+  });
+}
+
+if (modeTrackingBtn) {
+  modeTrackingBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setAppMode("TRACKING");
+  });
+}
+
 
 
