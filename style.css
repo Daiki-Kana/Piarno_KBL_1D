@@ -193,42 +193,237 @@ html, body {
 }
 
 /* ==========================================================================
-   楽曲選択ボタン＆ポップアップメニュー（白黒ミニマル・右上配置）
+   右上固定：コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン）
    ========================================================================== */
-.song-select-container {
+.top-right-controls {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top, 0px));
   right: calc(16px + env(safe-area-inset-right, 0px));
   z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   pointer-events: auto;
 }
 
-/* 右上の丸いボタン（直径38px・白黒シンプル） */
-.song-select-btn {
+.song-select-container {
+  position: relative;
+  pointer-events: auto;
+}
+
+/* ==========================================================================
+   右手運指ガイドウィジェット（ドラッグ位置移動 ＆ 自由リサイズ対応）
+   ========================================================================== */
+.hand-guide-widget {
+  --hand-guide-size: 90px;
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: calc(66px + env(safe-area-inset-right, 0px));
+  width: var(--hand-guide-size, 90px);
+  height: var(--hand-guide-size, 90px);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
+  z-index: 210;
+  transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1), filter 0.15s ease;
+}
+
+.hand-guide-widget:active {
+  cursor: grabbing;
+}
+
+.hand-guide-widget.active-moving {
+  cursor: grabbing !important;
+  transition: none !important;
+}
+
+.hand-guide-widget.active-resizing {
+  transition: none !important;
+}
+
+/* 左下のドラッグリサイズつまみ（対角斜めラインアイコン） */
+.hand-guide-resizer {
+  position: absolute;
+  left: -2px;
+  bottom: -2px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 3px;
+  cursor: sw-resize;
+  touch-action: none;
+  z-index: 10;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.hand-guide-resizer:hover,
+.hand-guide-resizer.active-drag {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.hand-guide-resizer .resizer-icon {
+  width: 12px;
+  height: 12px;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  fill: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.hand-guide-resizer:hover .resizer-icon,
+.hand-guide-resizer.active-drag .resizer-icon {
+  stroke: #ffffff;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
+}
+
+/* 手のひら・各指のSVGベース（ドロップシャドウで背景から浮かび上がらせる） */
+.hand-guide-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+/* 手全体の一体型シームレスベース（指定色 #FEDCBD、つなぎ目完全ゼロ） */
+.hand-base-unified {
+  fill: #FEDCBD;
+  stroke: none;
+}
+
+/* 各指オーバーレイ（通常時は完全非表示でつなぎ目・重なりを物理排除） */
+.hand-finger {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* 選択された指（アクティブ：鮮やかな水色 #00E5FF ソリッド＋水色ネオングロー） */
+.hand-finger.active {
+  opacity: 1;
+}
+
+.hand-finger.active .finger-path {
+  fill: #00E5FF;
+  stroke: none;
+  filter: drop-shadow(0 0 6px #00E5FF) drop-shadow(0 0 16px rgba(0, 229, 255, 0.9));
+}
+
+/* 打鍵時の一瞬のポップフィードバック */
+.hand-guide-widget.hit-pop {
+  transform: scale(1.1);
+  filter: brightness(1.25);
+}
+
+.song-select-container {
+  position: relative;
+  pointer-events: auto;
+}
+
+/* 右上コントロール共通丸ボタン（直径38px・白黒シンプル） */
+.ctrl-circle-btn {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background-color: rgba(20, 20, 20, 0.9);
+  background-color: rgba(20, 20, 20, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.4);
   color: #ffffff;
-  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   user-select: none;
-  transition: all 0.15s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  -webkit-user-select: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+  outline: none;
+  padding: 0;
 }
 
-.song-select-btn:hover {
-  background-color: #ffffff;
-  color: #000000;
+.ctrl-circle-btn:hover {
+  background-color: rgba(45, 45, 45, 0.95);
   border-color: #ffffff;
+  transform: scale(1.05);
 }
 
-.song-select-btn:active {
+.ctrl-circle-btn:active {
   transform: scale(0.92);
+}
+
+/* トラッキングライン切替ボタンのアイコンスタイル */
+.tracking-line-btn .btn-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.tracking-line-btn .icon-line {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease, opacity 0.2s ease;
+}
+
+.tracking-line-btn .icon-dot {
+  fill: #ffffff;
+  transition: fill 0.2s ease, opacity 0.2s ease;
+}
+
+.tracking-line-btn .icon-dot-tip {
+  fill: #00E5FF;
+  filter: drop-shadow(0 0 3px #00E5FF);
+  transition: all 0.2s ease;
+}
+
+.tracking-line-btn .slash-line {
+  display: none;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+/* OFF（トラッキングライン非表示）状態 */
+.tracking-line-btn.off {
+  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(15, 15, 15, 0.7);
+}
+
+.tracking-line-btn.off .icon-line,
+.tracking-line-btn.off .icon-dot {
+  opacity: 0.35;
+}
+
+.tracking-line-btn.off .icon-dot-tip {
+  fill: rgba(255, 255, 255, 0.35);
+  filter: none;
+}
+
+.tracking-line-btn.off .slash-line {
+  display: block;
+  stroke: #ff5252;
+  filter: drop-shadow(0 0 2px rgba(255, 82, 82, 0.8));
+}
+
+.song-select-btn {
+  font-size: 16px;
 }
 
 /* 曲選択メニュー（白黒ミニマルポップアップ） */

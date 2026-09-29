@@ -63,6 +63,10 @@ function checkDebugPanelVisibility() {
 checkDebugPanelVisibility();
 window.addEventListener("resize", checkDebugPanelVisibility);
 
+// トラッキングライン（骨格線・指先マーカー）の表示フラグ（localStorageで状態保存）
+export const TRACKING_LINES_STORAGE_KEY = "piarno_show_tracking_lines";
+export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) !== "false";
+
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
 // 全ファイルのフレームを結合したフラット配列
@@ -918,11 +922,36 @@ export function setTargetFinger(fingerKey) {
 updateCachedConnections(currentFingerKey);
 
 /**
+ * 画面右上の右手運指ガイドUIを更新（指定指を純白ハイライト）
+ * @param {string} fingerKey "THUMB" | "INDEX" | "MIDDLE" | "RING" | "PINKY"
+ * @param {number|string} fingerNum 1〜5
+ * @param {string} note "ド", "レ", "ミ" 等
+ */
+export function updateHandGuideWidget(fingerKey, fingerNum, note) {
+  const fingerEls = document.querySelectorAll(".hand-finger");
+  fingerEls.forEach((el) => {
+    if (el.dataset.finger === fingerKey) {
+      el.classList.add("active");
+    } else {
+      el.classList.remove("active");
+    }
+  });
+
+  const label = document.getElementById("hand-guide-label");
+  if (label) {
+    label.textContent = `右手 ${fingerNum || ""} ${note || ""}`.trim();
+  }
+}
+
+/**
  * 楽曲進行とターゲット指UIの更新
  */
 export function renderSongGuideUI() {
   const currentItem = currentSequence[currentSongStep];
   if (!currentItem) return;
+
+  // 画面右上：右手運指ガイドウィジェットのハイライト更新
+  updateHandGuideWidget(currentItem.fingerKey, currentItem.fingerNum, currentItem.note);
 
   if (targetFingerVal) {
     const fingerName = FINGER_NAMES[currentItem.fingerKey] || currentItem.fingerKey;
@@ -2288,6 +2317,15 @@ function drawRawHandLandmarks(results) {
     if (currentRy >= hitRyThreshold) {
       tapState = "TOUCHED";
 
+      // 右手運指ガイドウィジェットの打鍵フィードバック（一瞬ポップ）
+      const handGuideWidget = document.getElementById("hand-guide-widget");
+      if (handGuideWidget) {
+        handGuideWidget.classList.add("hit-pop");
+        setTimeout(() => {
+          handGuideWidget.classList.remove("hit-pop");
+        }, 160);
+      }
+
       // 現在の音符を取得
       const currentTarget = currentSequence[currentSongStep];
 
@@ -2337,62 +2375,64 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 指定された指の骨格描画（shadowBlurを撤去し、多層ストロークで高速・高鮮明に描画）
-  canvasCtx.save();
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
+  // 5. 指定された指の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
+  if (showTrackingLines) {
+    canvasCtx.save();
+    canvasCtx.lineCap = "round";
+    canvasCtx.lineJoin = "round";
 
-  // 共通骨格パス生成
-  const drawBonePath = () => {
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-    canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-    canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-    canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  };
+    // 共通骨格パス生成
+    const drawBonePath = () => {
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+      canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+      canvasCtx.lineTo(smoothP3.x, smoothP3.y);
+      canvasCtx.lineTo(smoothTip.x, smoothTip.y);
+    };
 
-  // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
-  canvasCtx.strokeStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
-  canvasCtx.lineWidth = 12.0;
-  drawBonePath();
-  canvasCtx.stroke();
+    // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
+    canvasCtx.strokeStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
+    canvasCtx.lineWidth = 12.0;
+    drawBonePath();
+    canvasCtx.stroke();
 
-  // 層2: 中間メインネオンライン（太さ 6.0px、高彩度ネオンカラー）
-  canvasCtx.strokeStyle = targetColor.stroke;
-  canvasCtx.lineWidth = 6.0;
-  drawBonePath();
-  canvasCtx.stroke();
+    // 層2: 中間メインネオンライン（太さ 6.0px、高彩度ネオンカラー）
+    canvasCtx.strokeStyle = targetColor.stroke;
+    canvasCtx.lineWidth = 6.0;
+    drawBonePath();
+    canvasCtx.stroke();
 
-  // 層3: 内側高輝度ホワイトコアライン（太さ 2.4px：芯が白く発光して立体感・視認性を極大化）
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-  canvasCtx.lineWidth = 2.4;
-  drawBonePath();
-  canvasCtx.stroke();
+    // 層3: 内側高輝度ホワイトコアライン（太さ 2.4px：芯が白く発光して立体感・視認性を極大化）
+    canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    canvasCtx.lineWidth = 2.4;
+    drawBonePath();
+    canvasCtx.stroke();
 
-  // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
-  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
-    // 層1: 外側ハロー
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
-    canvasCtx.fill();
+    // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
+    [smoothP1, smoothP2, smoothP3].forEach((pt) => {
+      // 層1: 外側ハロー
+      canvasCtx.beginPath();
+      canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
+      canvasCtx.fillStyle = targetColor.halo || "rgba(0, 229, 255, 0.25)";
+      canvasCtx.fill();
 
-    // 層2: メインカラードット
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 5.0, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.fill;
-    canvasCtx.fill();
+      // 層2: メインカラードット
+      canvasCtx.beginPath();
+      canvasCtx.arc(pt.x, pt.y, 5.0, 0, 2 * Math.PI);
+      canvasCtx.fillStyle = targetColor.fill;
+      canvasCtx.fill();
 
-    // 層3: 内側白熱コア
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2.4, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "#ffffff";
-    canvasCtx.fill();
-  });
+      // 層3: 内側白熱コア
+      canvasCtx.beginPath();
+      canvasCtx.arc(pt.x, pt.y, 2.4, 0, 2 * Math.PI);
+      canvasCtx.fillStyle = "#ffffff";
+      canvasCtx.fill();
+    });
 
-  // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
-  drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
-  canvasCtx.restore();
+    // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
+    drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
+    canvasCtx.restore();
+  }
 }
 
 /**
@@ -2801,6 +2841,237 @@ if (songSelectBtn && songSelectMenu) {
       songSelectMenu.classList.add("hidden");
     }
   });
+}
+
+// 画面右上のトラッキングライン表示切替ボタン
+const trackingLineToggleBtn = document.getElementById("tracking-line-toggle-btn");
+if (trackingLineToggleBtn) {
+  const updateBtnUI = () => {
+    trackingLineToggleBtn.classList.toggle("off", !showTrackingLines);
+    trackingLineToggleBtn.setAttribute("aria-pressed", showTrackingLines.toString());
+    trackingLineToggleBtn.title = showTrackingLines
+      ? "トラッキングライン非表示に切替"
+      : "トラッキングライン表示に切替";
+  };
+  updateBtnUI();
+
+  trackingLineToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    ensureAudioContext();
+    showTrackingLines = !showTrackingLines;
+    try {
+      localStorage.setItem(TRACKING_LINES_STORAGE_KEY, showTrackingLines.toString());
+    } catch {
+      // localStorage制限環境用フォールバック
+    }
+    updateBtnUI();
+  });
+}
+
+// ==========================================================================
+// 画面内の右手運指ガイドウィジェット（自由ドラッグ移動 ＆ 40px〜420pxリサイズ対応）
+// ==========================================================================
+const handGuideWidget = document.getElementById("hand-guide-widget");
+const handGuideResizer = document.getElementById("hand-guide-resizer");
+
+if (handGuideWidget) {
+  const KEY_SIZE = "piarno_hand_guide_custom_size";
+  const KEY_POS_X = "piarno_hand_guide_pos_x";
+  const KEY_POS_Y = "piarno_hand_guide_pos_y";
+  const MIN_SIZE = 40;
+  const MAX_SIZE = 420;
+  const DEFAULT_SIZE = 90;
+
+  // 1. 前回保存されたサイズを復元（40px〜420px）
+  const savedSize = parseFloat(localStorage.getItem(KEY_SIZE));
+  const initialSize = !isNaN(savedSize) && savedSize >= MIN_SIZE && savedSize <= MAX_SIZE ? savedSize : DEFAULT_SIZE;
+  handGuideWidget.style.setProperty("--hand-guide-size", `${initialSize}px`);
+
+  // 2. 前回保存された位置（X, Y）を復元
+  const savedPosX = parseFloat(localStorage.getItem(KEY_POS_X));
+  const savedPosY = parseFloat(localStorage.getItem(KEY_POS_Y));
+
+  const clampPosition = (x, y, w, h) => {
+    const maxX = Math.max(0, window.innerWidth - w);
+    const maxY = Math.max(0, window.innerHeight - h);
+    return {
+      x: Math.max(0, Math.min(maxX, x)),
+      y: Math.max(0, Math.min(maxY, y)),
+    };
+  };
+
+  if (!isNaN(savedPosX) && !isNaN(savedPosY)) {
+    const clamped = clampPosition(savedPosX, savedPosY, initialSize, initialSize);
+    handGuideWidget.style.left = `${clamped.x}px`;
+    handGuideWidget.style.top = `${clamped.y}px`;
+    handGuideWidget.style.right = "auto";
+  }
+
+  // ウィンドウリサイズ時のはみ出し防止
+  window.addEventListener("resize", () => {
+    const rect = handGuideWidget.getBoundingClientRect();
+    const clamped = clampPosition(rect.left, rect.top, rect.width, rect.height);
+    if (rect.left !== clamped.x || rect.top !== clamped.y) {
+      handGuideWidget.style.left = `${clamped.x}px`;
+      handGuideWidget.style.top = `${clamped.y}px`;
+      handGuideWidget.style.right = "auto";
+    }
+  });
+
+  // 3. 手本体のドラッグによる画面内「位置移動」
+  let isMoving = false;
+  let moveStartPointerX = 0;
+  let moveStartPointerY = 0;
+  let moveStartLeft = 0;
+  let moveStartTop = 0;
+
+  handGuideWidget.addEventListener("pointerdown", (e) => {
+    // リサイズつまみをクリックした場合は位置移動を行わない（リサイズ優先）
+    if (handGuideResizer && (e.target === handGuideResizer || handGuideResizer.contains(e.target))) {
+      return;
+    }
+    e.stopPropagation();
+    e.preventDefault();
+    isMoving = true;
+    moveStartPointerX = e.clientX;
+    moveStartPointerY = e.clientY;
+
+    const rect = handGuideWidget.getBoundingClientRect();
+    moveStartLeft = rect.left;
+    moveStartTop = rect.top;
+
+    handGuideWidget.classList.add("active-moving");
+    handGuideWidget.setPointerCapture(e.pointerId);
+  });
+
+  handGuideWidget.addEventListener("pointermove", (e) => {
+    if (!isMoving) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const deltaX = e.clientX - moveStartPointerX;
+    const deltaY = e.clientY - moveStartPointerY;
+
+    const rect = handGuideWidget.getBoundingClientRect();
+    const clamped = clampPosition(moveStartLeft + deltaX, moveStartTop + deltaY, rect.width, rect.height);
+
+    handGuideWidget.style.left = `${clamped.x}px`;
+    handGuideWidget.style.top = `${clamped.y}px`;
+    handGuideWidget.style.right = "auto";
+  });
+
+  const onMoveEnd = (e) => {
+    if (!isMoving) return;
+    isMoving = false;
+    handGuideWidget.classList.remove("active-moving");
+    try {
+      handGuideWidget.releasePointerCapture(e.pointerId);
+    } catch {
+      // 既に解放済みの場合は無視
+    }
+
+    // 最終移動位置を永続化
+    const rect = handGuideWidget.getBoundingClientRect();
+    try {
+      localStorage.setItem(KEY_POS_X, Math.round(rect.left).toString());
+      localStorage.setItem(KEY_POS_Y, Math.round(rect.top).toString());
+    } catch {
+      // localStorage制限環境用フォールバック
+    }
+  };
+
+  handGuideWidget.addEventListener("pointerup", onMoveEnd);
+  handGuideWidget.addEventListener("pointercancel", onMoveEnd);
+
+  // 4. 左下つまみによる「サイズ変更」（40px〜420px）
+  if (handGuideResizer) {
+    let isResizing = false;
+    let resizeStartPointerX = 0;
+    let resizeStartPointerY = 0;
+    let resizeStartSize = initialSize;
+    let resizeStartLeft = 0;
+
+    handGuideResizer.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      isResizing = true;
+      resizeStartPointerX = e.clientX;
+      resizeStartPointerY = e.clientY;
+
+      const rect = handGuideWidget.getBoundingClientRect();
+      resizeStartSize = rect.width || initialSize;
+      resizeStartLeft = rect.left;
+
+      handGuideWidget.classList.add("active-resizing");
+      handGuideResizer.classList.add("active-drag");
+      handGuideResizer.setPointerCapture(e.pointerId);
+    });
+
+    handGuideResizer.addEventListener("pointermove", (e) => {
+      if (!isResizing) return;
+      e.stopPropagation();
+      e.preventDefault();
+
+      // 左下のつまみを左(画面内側)または下へ引くと拡大
+      const deltaX = resizeStartPointerX - e.clientX;
+      const deltaY = e.clientY - resizeStartPointerY;
+      const delta = (deltaX + deltaY) / 2;
+
+      const newSize = Math.round(Math.max(MIN_SIZE, Math.min(MAX_SIZE, resizeStartSize + delta)));
+      handGuideWidget.style.setProperty("--hand-guide-size", `${newSize}px`);
+
+      // リサイズ時に画面右端・下端からはみ出さないよう自動調整
+      const rect = handGuideWidget.getBoundingClientRect();
+      const clamped = clampPosition(rect.left, rect.top, newSize, newSize);
+      if (rect.left !== clamped.x || rect.top !== clamped.y) {
+        handGuideWidget.style.left = `${clamped.x}px`;
+        handGuideWidget.style.top = `${clamped.y}px`;
+        handGuideWidget.style.right = "auto";
+      }
+    });
+
+    const onResizeEnd = (e) => {
+      if (!isResizing) return;
+      isResizing = false;
+      handGuideWidget.classList.remove("active-resizing");
+      handGuideResizer.classList.remove("active-drag");
+      try {
+        handGuideResizer.releasePointerCapture(e.pointerId);
+      } catch {
+        // 既に解放済みの場合は無視
+      }
+
+      // 最終サイズを永続化
+      const finalRect = handGuideWidget.getBoundingClientRect();
+      const finalSize = Math.round(finalRect.width || initialSize);
+      try {
+        localStorage.setItem(KEY_SIZE, finalSize.toString());
+        localStorage.setItem(KEY_POS_X, Math.round(finalRect.left).toString());
+        localStorage.setItem(KEY_POS_Y, Math.round(finalRect.top).toString());
+      } catch {
+        // localStorage制限環境用フォールバック
+      }
+    };
+
+    handGuideResizer.addEventListener("pointerup", onResizeEnd);
+    handGuideResizer.addEventListener("pointercancel", onResizeEnd);
+
+    // キーボード操作対応（矢印キーで微調整）
+    handGuideResizer.addEventListener("keydown", (e) => {
+      let currentVal = parseFloat(getComputedStyle(handGuideWidget).getPropertyValue("--hand-guide-size")) || DEFAULT_SIZE;
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const nextVal = Math.min(MAX_SIZE, currentVal + 10);
+        handGuideWidget.style.setProperty("--hand-guide-size", `${nextVal}px`);
+        localStorage.setItem(KEY_SIZE, nextVal.toString());
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const nextVal = Math.max(MIN_SIZE, currentVal - 10);
+        handGuideWidget.style.setProperty("--hand-guide-size", `${nextVal}px`);
+        localStorage.setItem(KEY_SIZE, nextVal.toString());
+      }
+    });
+  }
 }
 
 // 初回オーディオ開始バナーのクリックイベント

@@ -22,13 +22,65 @@
         <canvas id="output-canvas"></canvas>
       </div>
 
-      <!-- 画面右上：楽曲選択丸ボタン＆ポップアップメニュー -->
-      <div class="song-select-container">
-        <button id="song-select-btn" class="song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
-        <div id="song-select-menu" class="song-select-menu hidden">
-          <div class="song-menu-header">曲を選択</div>
-          <button class="song-menu-item active" data-song="ode_to_joy">よろこびのうた</button>
-          <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんのひつじ</button>
+      <!-- 画面内を自由にドラッグ移動・サイズ変更できる右手運指ガイド -->
+      <div id="hand-guide-widget" class="hand-guide-widget" title="右手運指ガイド (ドラッグで移動、左下のつまみでサイズ変更)" role="region" aria-label="右手運指ガイド">
+        <!-- 左下：ドラッグリサイズつまみ -->
+        <div id="hand-guide-resizer" class="hand-guide-resizer" title="ドラッグしてサイズ変更" role="slider" aria-label="サイズ変更ハンドル" tabindex="0">
+          <svg viewBox="0 0 16 16" class="resizer-icon" aria-hidden="true">
+            <path d="M 3,13 L 13,3 M 6,13 L 13,6 M 9,13 L 13,9" />
+          </svg>
+        </div>
+
+        <svg class="hand-guide-svg" viewBox="0 0 200 200" aria-hidden="true">
+          <!-- 手全体の一体型シームレスベース（つなぎ目が一切ない単一パス） -->
+          <path class="hand-base-unified" d="M 88,172 L 142,172 L 142,160 C 146,140 155,120 155,98 L 155,58 A 8.5,8.5 0 0,0 138,58 L 138,98 L 135,98 L 135,38 A 8.5,8.5 0 0,0 118,38 L 118,94 L 115,94 L 115,28 A 8.5,8.5 0 0,0 97,28 L 97,94 L 94,94 L 94,40 A 8.5,8.5 0 0,0 77,40 L 77,106 C 78,114 80,118 80,118 L 49,94 A 10,10 0 0,0 36,108 L 68,132 C 72,138 78,148 78,154 L 88,160 L 88,172 Z" />
+
+          <!-- 各指のハイライトオーバーレイ（アクティブ時のみ水色で発光表示） -->
+          <!-- 親指 (THUMB / 1) -->
+          <g id="hand-finger-THUMB" class="hand-finger" data-finger="THUMB">
+            <path class="finger-path" d="M 80,118 L 49,94 A 10,10 0 0,0 36,108 L 68,132 C 73,127 77,122 80,118 Z" />
+          </g>
+          <!-- 人差し指 (INDEX / 2) -->
+          <g id="hand-finger-INDEX" class="hand-finger" data-finger="INDEX">
+            <path class="finger-path" d="M 77,98 L 77,40 A 8.5,8.5 0 0,1 94,40 L 94,98 Z" />
+          </g>
+          <!-- 中指 (MIDDLE / 3) -->
+          <g id="hand-finger-MIDDLE" class="hand-finger" data-finger="MIDDLE">
+            <path class="finger-path" d="M 97,94 L 97,28 A 8.5,8.5 0 0,1 115,28 L 115,94 Z" />
+          </g>
+          <!-- 薬指 (RING / 4) -->
+          <g id="hand-finger-RING" class="hand-finger" data-finger="RING">
+            <path class="finger-path" d="M 118,94 L 118,38 A 8.5,8.5 0 0,1 135,38 L 135,94 Z" />
+          </g>
+          <!-- 小指 (PINKY / 5) -->
+          <g id="hand-finger-PINKY" class="hand-finger" data-finger="PINKY">
+            <path class="finger-path" d="M 138,98 L 138,58 A 8.5,8.5 0 0,1 155,58 L 155,98 Z" />
+          </g>
+        </svg>
+      </div>
+
+      <!-- 画面右上コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン） -->
+      <div class="top-right-controls">
+        <!-- トラッキングライン表示切替ボタン -->
+        <button id="tracking-line-toggle-btn" class="ctrl-circle-btn tracking-line-btn" aria-label="トラッキングライン表示切替" title="トラッキングライン表示切替" aria-pressed="true">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <path class="icon-line" d="M 4,19 L 10,13 L 14,16 L 20,5" />
+            <circle cx="4" cy="19" r="2" class="icon-dot" />
+            <circle cx="10" cy="13" r="2" class="icon-dot" />
+            <circle cx="14" cy="16" r="2" class="icon-dot" />
+            <circle cx="20" cy="5" r="2.5" class="icon-dot-tip" />
+            <line x1="3" y1="21" x2="21" y2="3" class="slash-line" />
+          </svg>
+        </button>
+
+        <!-- 楽曲選択丸ボタン＆ポップアップメニュー -->
+        <div class="song-select-container">
+          <button id="song-select-btn" class="ctrl-circle-btn song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
+          <div id="song-select-menu" class="song-select-menu hidden">
+            <div class="song-menu-header">曲を選択</div>
+            <button class="song-menu-item active" data-song="ode_to_joy">よろこびのうた</button>
+            <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんのひつじ</button>
+          </div>
         </div>
       </div>
 
