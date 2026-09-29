@@ -16,7 +16,9 @@ html, body {
   height: 100vh;
   overflow: hidden;
   user-select: none;
+  -webkit-user-select: none;
   touch-action: none;
+  overscroll-behavior: none;
 }
 
 #app {
@@ -27,28 +29,34 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: #000000;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
-/* ビデオコンテナ：ビデオの自然なアスペクト比に完全一致してサイズが決まる */
+/* ビデオコンテナ：カメラ映像のアスペクト比を維持したまま、画面領域（幅・高さ）の限界まで最大拡大 */
 .video-container {
   position: relative;
-  display: inline-block;
-  max-width: 100vw;
-  max-height: 100vh;
+  display: block;
+  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算 */
+  width: min(100vw, calc(100vh * var(--video-aspect, 1.3333)));
+  height: min(100vh, calc(100vw / var(--video-aspect, 1.3333)));
+  width: min(100dvw, calc(100dvh * var(--video-aspect, 1.3333)));
+  height: min(100dvh, calc(100dvw / var(--video-aspect, 1.3333)));
   line-height: 0; /* 下部の隙間を排除 */
 }
 
-/* インカメラ映像：歪ませずに画面内に最大表示、鏡像（ミラー）反転 */
+/* インカメラ映像：コンテナに合わせて100%拡大表示、鏡像（ミラー）反転 */
 #webcam {
   display: block;
-  max-width: 100vw;
-  max-height: 100vh;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  object-fit: fill; /* コンテナ自体がアスペクト比を完全維持しているためfillで完全重畳 */
   transform: scaleX(-1);
 }
 
-/* 骨格描画Canvas：ビデオと完全に同一点・同一比率で重畳、同じく鏡像反転 */
+/* 骨格描画Canvas：ビデオと完全に同一矩形・同一比率で重畳、同じく鏡像反転 */
 #output-canvas {
   position: absolute;
   top: 0;
@@ -775,4 +783,16 @@ html, body {
   cursor: not-allowed;
   transform: none;
 }
+
+/* iPadセンターステージ等の注意書き（白黒ミニマル・控えめな注記） */
+.start-hint {
+  margin-top: 14px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #666666;
+  text-align: center;
+  letter-spacing: 0.3px;
+  word-break: break-word;
+}
+
 

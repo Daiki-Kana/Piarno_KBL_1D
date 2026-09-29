@@ -164,8 +164,47 @@ let trainedHitSamples = 0;
 // 打鍵ステートマシン管理（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
 let tapState = "IDLE";
 
+// 画面自動消灯防止（Screen Wake Lock API）の管理用センチネル
+let wakeLockSentinel = null;
+
 /**
- * AudioContextの初期化・再開（ブラウザのAutoplay Policy対応）
+ * 画面スリープ防止（Screen Wake Lock API）の要求
+ * iPad等の演奏中に画面が自動消灯しないよう画面ロックを保持
+ */
+export async function requestWakeLock() {
+  if ("wakeLock" in navigator && typeof navigator.wakeLock.request === "function") {
+    try {
+      if (wakeLockSentinel && !wakeLockSentinel.released) {
+        return;
+      }
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+      wakeLockSentinel.addEventListener("release", () => {
+        console.log("[WAKE LOCK] スクリーンロックが解放されました");
+        wakeLockSentinel = null;
+      });
+      console.log("[WAKE LOCK] 画面スリープ防止を有効化しました");
+    } catch (err) {
+      console.warn("[WAKE LOCK] 画面スリープ防止の取得スキップ（非対応または低電力モード等）:", err);
+    }
+  }
+}
+
+/**
+ * スクリーンロックの安全な解放
+ */
+export async function releaseWakeLock() {
+  if (wakeLockSentinel) {
+    try {
+      await wakeLockSentinel.release();
+    } catch (err) {
+      console.warn("[WAKE LOCK] 解放エラー:", err);
+    }
+    wakeLockSentinel = null;
+  }
+}
+
+/**
+ * AudioContextの初期化・再開（ブラウザのAutoplay PolicyおよびiOS Safariのサスペンド・interrupted対応）
  */
 export function ensureAudioContext() {
   if (Tone.context.state !== "running") {
@@ -175,7 +214,7 @@ export function ensureAudioContext() {
   }
 
   const rawCtx = Tone.getContext().rawContext;
-  if (rawCtx && rawCtx.state === "suspended") {
+  if (rawCtx && (rawCtx.state === "suspended" || rawCtx.state === "interrupted")) {
     rawCtx.resume().catch((err) => {
       console.warn("[AUDIO] AudioContext resume failed:", err);
     });
@@ -797,6 +836,8 @@ let lastRawLandmarks = null;
 
 // 右手トラッキングロック用：追従中の右手手首（Landmark 0）の正規化座標
 let lastTrackedWrist = null;
+// 平滑化対象指の切り替え検知用（指変更時にスナップ初期化）
+let lastFilteredFingerKey = null;
 
 // 手の骨格コネクション定義（全21ランドマーク間の接続ペア [startIdx, endIdx]）
 const HAND_CONNECTIONS = [
@@ -999,139 +1040,7 @@ export function getTargetFingerColor(stepIndex) {
   };
 }
 
-// 次の指への指定ビームエフェクト管理配列
-export const tapVisualEffects = [];
 
-/**
- * 次の指へ飛んでいく光のラインエフェクト（指定ビーム）を生成
- * @param {number} fromX 始点X
- * @param {number} fromY 始点Y
- * @param {number} toX 終点X
- * @param {number} toY 終点Y
- * @param {object} color 次の音符の色
- */
-export function spawnBeamEffect(fromX, fromY, toX, toY, color) {
-  const dx = toX - fromX;
-  const dy = toY - fromY;
-  const dist = Math.hypot(dx, dy);
-
-  // 制御点（始点と終点の中点から上空へ持ち上げてダイナミックなアーチを描く）
-  const midX = (fromX + toX) / 2;
-  const midY = (fromY + toY) / 2 - Math.min(80, Math.max(30, dist * 0.35));
-
-  // RGB文字列の事前キャッシュ（ループ内の正規表現全廃のため）
-  const colorRgb = color?.rgb || (color?.r !== undefined ? `${color.r}, ${color.g}, ${color.b}` : "0, 229, 255");
-
-  tapVisualEffects.push({
-    type: "beam",
-    fromX,
-    fromY,
-    toX,
-    toY,
-    midX,
-    midY,
-    progress: 0.0,
-    speed: 0.055, // 約18フレームで軽快に着弾
-    trail: [],    // 軌跡座標履歴
-    color,
-    colorRgb
-  });
-}
-
-/**
- * 次の指への指定ビームエフェクトの更新＆描画（GPU負荷を抑えた高速・滑らか描画）
- * @param {CanvasRenderingContext2D} ctx
- */
-export function updateAndDrawTapEffects(ctx) {
-  if (tapVisualEffects.length === 0) return;
-
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  for (let i = tapVisualEffects.length - 1; i >= 0; i--) {
-    const fx = tapVisualEffects[i];
-
-    if (fx.type === "beam") {
-      fx.progress += fx.speed;
-      const t = Math.min(1.0, fx.progress);
-
-      // 2次ベジェ曲線補間 B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-      const invT = 1.0 - t;
-      const curX = invT * invT * fx.fromX + 2 * invT * t * fx.midX + t * t * fx.toX;
-      const curY = invT * invT * fx.fromY + 2 * invT * t * fx.midY + t * t * fx.toY;
-
-      // 軌跡の追加（unshiftによる全要素シフトを排除し、push/shiftによる軽量管理方式に変更）
-      fx.trail.push({ x: curX, y: curY });
-      if (fx.trail.length > 18) {
-        fx.trail.shift();
-      }
-
-      // ビーム軌跡のバッチ描画（セグメント細切れstrokeを廃止し、3区間にまとめてドローコールを最小化）
-      const trailLen = fx.trail.length;
-      if (trailLen > 1) {
-        const BATCH_COUNT = 3;
-        const colorRgb = fx.colorRgb || fx.color?.rgb || "0, 229, 255";
-
-        // パス1: 外側のネオン光条ライン（3バッチにまとめてドローコール削減）
-        for (let s = 0; s < BATCH_COUNT; s++) {
-          const startIdx = Math.floor((s * (trailLen - 1)) / BATCH_COUNT);
-          const endIdx = Math.floor(((s + 1) * (trailLen - 1)) / BATCH_COUNT);
-          if (startIdx >= endIdx) continue;
-
-          // 軌跡の進行度（0.0: 最も古い尾部, 1.0: 最新の先端部）
-          const prog = (startIdx + endIdx) / (2 * (trailLen - 1));
-          const trailAlpha = prog * (1.0 - t * 0.2);
-
-          ctx.beginPath();
-          ctx.moveTo(fx.trail[startIdx].x, fx.trail[startIdx].y);
-          for (let k = startIdx + 1; k <= endIdx; k++) {
-            ctx.lineTo(fx.trail[k].x, fx.trail[k].y);
-          }
-          ctx.strokeStyle = `rgba(${colorRgb}, ${(trailAlpha * 0.85).toFixed(2)})`;
-          ctx.lineWidth = Math.max(2.0, 9.0 * trailAlpha);
-          ctx.stroke();
-        }
-
-        // パス2: 内側の高輝度ホワイトコア（3バッチにまとめてドローコール削減）
-        for (let s = 0; s < BATCH_COUNT; s++) {
-          const startIdx = Math.floor((s * (trailLen - 1)) / BATCH_COUNT);
-          const endIdx = Math.floor(((s + 1) * (trailLen - 1)) / BATCH_COUNT);
-          if (startIdx >= endIdx) continue;
-
-          const prog = (startIdx + endIdx) / (2 * (trailLen - 1));
-          const trailAlpha = prog * (1.0 - t * 0.2);
-
-          ctx.beginPath();
-          ctx.moveTo(fx.trail[startIdx].x, fx.trail[startIdx].y);
-          for (let k = startIdx + 1; k <= endIdx; k++) {
-            ctx.lineTo(fx.trail[k].x, fx.trail[k].y);
-          }
-          ctx.strokeStyle = `rgba(255, 255, 255, ${(trailAlpha * 0.95).toFixed(2)})`;
-          ctx.lineWidth = Math.max(1.0, 3.5 * trailAlpha);
-          ctx.stroke();
-        }
-      }
-
-      // 先頭の光球（外周カラー 半径 7px + 中心ホワイトコア 半径 3.5px）
-      ctx.beginPath();
-      ctx.arc(curX, curY, 7.0, 0, 2 * Math.PI);
-      ctx.fillStyle = fx.color.fill;
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(curX, curY, 3.5, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ffffff";
-      ctx.fill();
-
-      // 終点着弾で消滅
-      if (t >= 1.0) {
-        tapVisualEffects.splice(i, 1);
-      }
-    }
-  }
-  ctx.restore();
-}
 
 /**
  * 指定指の学習済み閾値をアクティブ閾値にセット
@@ -1616,6 +1525,7 @@ async function handleStartPlay() {
     }
 
     // 4. カウントダウン（3・2・1・START!）を開始して演奏へ移行
+    await requestWakeLock();
     startCountdown(() => {
       console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
     });
@@ -1634,6 +1544,7 @@ async function handleStartPlay() {
           updateCanvasResolution();
           isPredicting = true;
           schedulePredictLoop();
+          await requestWakeLock();
           if (startModal) startModal.classList.add("hidden");
           startCountdown(() => {
             console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
@@ -1753,80 +1664,178 @@ function getCompatibleUserMedia(constraints) {
 }
 
 /**
+ * 端末がiPadまたは画面が4:3寄りのタブレット環境かどうかを判定
+ */
+function isTabletOrSquareScreen() {
+  const isTouch = navigator.maxTouchPoints && navigator.maxTouchPoints > 1;
+  const isAppleTablet = /iPad|Macintosh/i.test(navigator.userAgent) && isTouch;
+  // 画面のアスペクト比（長辺/短辺）が 1.55 未満（4:3 ≒ 1.33、iPad Pro ≒ 1.43）
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const ratio = Math.max(w, h) / Math.max(Math.min(w, h), 1);
+  return isAppleTablet || (isTouch && ratio < 1.55);
+}
+
+// 初期表示アスペクト比の設定（端末種別に応じて画面初期比率を最適化）
+const initialAspect = isTabletOrSquareScreen() ? 4 / 3 : 16 / 9;
+document.documentElement.style.setProperty("--video-aspect", initialAspect.toFixed(4));
+
+/**
  * インカメラ（フロントカメラ）の自動起動
  */
 async function startFrontCamera() {
   let stream = null;
 
-  // 16:9比率を維持しつつ、画質よりもフレームレート（60fps）と低遅延（低負荷）を最優先する制約リスト
-  // 720p等の高解像度は推論負荷・描画ピクセル数が増大しfps低下を招くため後回しとし、540p/360pを最優先探索
-  const tryConstraints = [
-    // 1. 540p (960x540, 16:9) 60fps志向（画質と軽量性の最良バランス）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 540 },
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60 }
-      },
-      audio: false
-    },
-    // 2. 360p (640x360, 16:9) 60fps志向（超軽量・最高レスポンス重視）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 360 },
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60 }
-      },
-      audio: false
-    },
-    // 3. 360p (640x360, 16:9) 任意fps（低解像度・軽量最優先）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 360 },
-        aspectRatio: { ideal: 16 / 9 }
-      },
-      audio: false
-    },
-    // 4. 540p (960x540, 16:9) 任意fps
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 540 },
-        aspectRatio: { ideal: 16 / 9 }
-      },
-      audio: false
-    },
-    // 5. 720p (1280x720, 16:9) 60fps志向（後回しフォールバック）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 16 / 9 },
-        frameRate: { ideal: 60 }
-      },
-      audio: false
-    },
-    // 6. インカメラ指定のみ（解像度・比率不問）
-    {
-      video: {
-        facingMode: "user"
-      },
-      audio: false
-    },
-    // 7. 最終フォールバック（ハードウェアが返せる任意のビデオ）
-    {
-      video: true,
-      audio: false
-    }
-  ];
+  const isTablet = isTabletOrSquareScreen();
+  console.log(`[CAM] 端末判定: ${isTablet ? "iPad/タブレット (4:3ネイティブ優先)" : "PC/スマートフォン (16:9優先)"}`);
+
+  // iPad/タブレットでは4:3を最優先して上下視野（手首・指先の垂直可動域）を最大確保
+  // PCや一般的なスマホでは16:9を優先して自然なワイド表示を維持
+  const tryConstraints = isTablet
+    ? [
+        // 1. 480p (640x480, 4:3) 60fps志向（iPadネイティブ比率・上下視野最大・低負荷）
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 2. 720p (960x720, 4:3) 60fps志向
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 3. 480p (640x480, 4:3) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 }
+          },
+          audio: false
+        },
+        // 4. 720p (960x720, 4:3) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 4 / 3 }
+          },
+          audio: false
+        },
+        // 5. 16:9 フォールバック (960x540)
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 6. インカメラ指定のみ
+        {
+          video: {
+            facingMode: "user"
+          },
+          audio: false
+        },
+        // 7. 最終フォールバック
+        {
+          video: true,
+          audio: false
+        }
+      ]
+    : [
+        // 1. 540p (960x540, 16:9) 60fps志向（PC/スマホ向け・画質と軽量性の最良バランス）
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 2. 360p (640x360, 16:9) 60fps志向（超軽量・最高レスポンス重視）
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 3. 360p (640x360, 16:9) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            aspectRatio: { ideal: 16 / 9 }
+          },
+          audio: false
+        },
+        // 4. 540p (960x540, 16:9) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            aspectRatio: { ideal: 16 / 9 }
+          },
+          audio: false
+        },
+        // 5. 480p (640x480, 4:3) フォールバック
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 }
+          },
+          audio: false
+        },
+        // 6. 720p (1280x720, 16:9) 60fps志向
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 }
+          },
+          audio: false
+        },
+        // 7. インカメラ指定のみ
+        {
+          video: {
+            facingMode: "user"
+          },
+          audio: false
+        },
+        // 8. 最終フォールバック
+        {
+          video: true,
+          audio: false
+        }
+      ];
 
   let lastError = null;
   for (const constraints of tryConstraints) {
@@ -1872,14 +1881,24 @@ async function startFrontCamera() {
       console.warn("FPS制約適用スキップ（端末非対応または制約適用不可）:", err);
     }
 
-    // 実効カメラ設定（解像度・fps）をHUDに反映
+    // 実効カメラ設定（解像度・アスペクト比・fps）をHUDに反映
     try {
       if (typeof track.getSettings === "function") {
         const settings = track.getSettings();
         const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "60fps";
         const resLabel = settings.height ? `${settings.height}p` : "-";
+        const aspectLabel =
+          settings.width && settings.height
+            ? Math.abs(settings.width / settings.height - 4 / 3) < 0.1 ||
+              Math.abs(settings.height / settings.width - 4 / 3) < 0.1
+              ? "4:3"
+              : Math.abs(settings.width / settings.height - 16 / 9) < 0.1 ||
+                Math.abs(settings.height / settings.width - 16 / 9) < 0.1
+              ? "16:9"
+              : `${(settings.width / settings.height).toFixed(2)}:1`
+            : "";
         if (camInfo) {
-          camInfo.textContent = `FRONT (${resLabel} ${fpsLabel})`.trim();
+          camInfo.textContent = `FRONT (${resLabel} ${aspectLabel} ${fpsLabel})`.replace(/\s+/g, " ").trim();
         }
       }
     } catch (settingErr) {
@@ -1919,16 +1938,25 @@ async function startFrontCamera() {
   isPredicting = true;
   schedulePredictLoop();
 
+  // 画面自動スリープ防止（Wake Lock）を要求
+  await requestWakeLock();
+
   updateStatus("トラッキング中");
 }
 
 /**
- * Canvas内部解像度をビデオのネイティブピクセル数に同期
+ * Canvas内部解像度およびコンテナアスペクト比をビデオのネイティブピクセル数に同期
  */
 function updateCanvasResolution() {
   if (video.videoWidth && video.videoHeight) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const aspect = video.videoWidth / video.videoHeight;
+    document.documentElement.style.setProperty("--video-aspect", aspect.toFixed(4));
+
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      console.log(`[CANVAS] ビデオ解像度・アスペクト比を完全同期: ${canvas.width}x${canvas.height} (比率 ${aspect.toFixed(3)}:1)`);
+    }
   }
 }
 
@@ -1940,6 +1968,11 @@ let lastVideoTimestamp = -1;
  */
 function processVideoFrame(frameTime) {
   if (!isPredicting) return;
+
+  // カメラ解像度とCanvas解像度の完全一致を常時保証（iPadの向き変更・比率変更時の座標ズレ防止）
+  if (video.videoWidth && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) {
+    updateCanvasResolution();
+  }
 
   // 正確なフレーム時間をミリ秒で算出（MediaPipe VIDEOモードが要求する厳密な単調増加を保証）
   const now = typeof frameTime === "number" ? frameTime : performance.now();
@@ -2140,6 +2173,8 @@ function drawRawHandLandmarks(results) {
 
   const fingerConfig = FINGER_CONFIGS[currentFingerKey] || FINGER_CONFIGS.THUMB;
   const targetIndices = fingerConfig.indices;
+  // 演奏判定および骨格描画に必要な関節インデックス（手首 0 ＋ 選択中指の全関節 [p1, p2, p3, tip]）
+  const activeJointIndices = [0, fingerConfig.p1Idx, fingerConfig.p2Idx, fingerConfig.p3Idx, fingerConfig.tipIdx];
   const width = canvas.width;
   const height = canvas.height;
   const now = performance.now();
@@ -2153,7 +2188,7 @@ function drawRawHandLandmarks(results) {
     // 3フレーム以内（約50ms）の一時的ロストであれば直前の平滑化座標で描画を維持し、画面の点滅・ジャンプを防止
     if (lostFrames <= MAX_LOST_FRAMES && hasValidSmoothedLandmarks) {
       // 直前フレームの平滑化座標でフィルターを現在タイムスタンプ（now）で空回し更新し、復帰時のdt拡大による速度微分スパイクを防止
-      for (let i = 0; i < 21; i++) {
+      for (const i of activeJointIndices) {
         const pt = smoothedLandmarksPool[i];
         landmarkFilters[i].filter(pt.x, pt.y, now, pt);
       }
@@ -2170,8 +2205,8 @@ function drawRawHandLandmarks(results) {
       hasValidSmoothedLandmarks = false;
       lastRawLandmarks = null;
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
+      lastFilteredFingerKey = null; // ★完全ロスト時は平滑化対象指もリセット
       resetDebugMetrics();
-      updateAndDrawTapEffects(canvasCtx);
       return;
     }
   } else {
@@ -2194,17 +2229,21 @@ function drawRawHandLandmarks(results) {
   // 追従中の右手手首の生正規化座標で lastTrackedWrist を毎フレーム更新
   lastTrackedWrist = { x: landmarks[0].x, y: landmarks[0].y };
 
-  // 全21関節点の独立平滑化（オブジェクトプールを再利用して毎フレームの新規生成・破棄によるGCスパイクを完全排除）
+  // 演奏・描画に必要な関節点のみ独立平滑化（全21点から5点に絞りフィルタ計算負荷を約76%削減）
   if (hasHands) {
-    if (isReacquired) {
-      // 画面外復帰初フレーム：過去の古い座標からの引きずりをバイパスし、今回検出された新座標で即座にスナップ初期化
-      for (let i = 0; i < 21; i++) {
+    const isFingerChanged = lastFilteredFingerKey !== currentFingerKey;
+    const needSnap = isReacquired || isFingerChanged;
+
+    if (needSnap) {
+      // 画面外復帰または指切り替え初フレーム：過去の古い座標からの引きずりをバイパスし、新座標で即座にスナップ初期化
+      for (const i of activeJointIndices) {
         const raw = landmarks[i];
         landmarkFilters[i].snap(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
       }
+      lastFilteredFingerKey = currentFingerKey;
     } else {
       // 通常トラッキング時：適応平滑化（1 Euro Filter）
-      for (let i = 0; i < 21; i++) {
+      for (const i of activeJointIndices) {
         const raw = landmarks[i];
         landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
       }
@@ -2265,10 +2304,6 @@ function drawRawHandLandmarks(results) {
         `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
       );
 
-      // 打鍵直前の指先座標を記録
-      const fromTipX = smoothTip.x;
-      const fromTipY = smoothTip.y;
-
       const isLastStep = currentSongStep === currentSequence.length - 1;
 
       if (isLastStep) {
@@ -2285,16 +2320,6 @@ function drawRawHandLandmarks(results) {
         // 通常進行：次の音符へステップ進行
         currentSongStep = currentSongStep + 1;
         const nextTarget = currentSequence[currentSongStep];
-        const nextColor = getTargetFingerColor(currentSongStep);
-
-        // 次の指先座標（全点平滑化済み座標から取得してブレ・飛びをゼロに）
-        const nextFingerCfg = FINGER_CONFIGS[nextTarget.fingerKey] || fingerConfig;
-        const nextSmoothTip = smoothedLandmarks[nextFingerCfg.tipIdx];
-        const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
-        const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
-
-        // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
-        spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
 
         // 次のターゲット指へ自動切り替えとガイド更新
         setTargetFinger(nextTarget.fingerKey);
@@ -2368,9 +2393,6 @@ function drawRawHandLandmarks(results) {
   // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
   drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
   canvasCtx.restore();
-
-  // 7. 演奏時エフェクト（彗星ビーム）のアニメーション更新・描画
-  updateAndDrawTapEffects(canvasCtx);
 }
 
 /**
@@ -2792,5 +2814,52 @@ if (audioStartBanner) {
 // 初期ターゲット指（よろこびのうた 第1音: 中指 3 ミ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
+
+// ==========================================================================
+// iPadOS / iOS Safari 安定化処理（誤操作ズーム抑止、オーディオサスペンド復帰、Wake Lock再要求）
+// ==========================================================================
+
+// 1. ピンチズーム・ジェスチャー操作の抑止（iPadでの演奏中の誤操作による画面拡大を防止）
+["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+  document.addEventListener(type, (e) => {
+    e.preventDefault();
+  }, { passive: false });
+});
+
+// 2. バックグラウンドからの復帰時（タブ切り替え・画面ロック解除・pageshow）の安定化
+// AudioContextのサスペンド復帰およびScreen Wake Lockの再要求
+async function handleResumeAudioAndWakeLock() {
+  try {
+    if (Tone && Tone.context && (Tone.context.state === "suspended" || Tone.context.state === "interrupted")) {
+      await Tone.context.resume();
+      console.log("[AUDIO] 復帰ハンドラ: Tone.context を再開しました");
+    }
+    const rawCtx = Tone.getContext().rawContext;
+    if (rawCtx && (rawCtx.state === "suspended" || rawCtx.state === "interrupted")) {
+      await rawCtx.resume();
+      console.log("[AUDIO] 復帰ハンドラ: raw AudioContext を再開しました");
+    }
+  } catch (err) {
+    console.warn("[AUDIO] 復帰時のAudioContext再開エラー:", err);
+  }
+
+  // カメラ推論・演奏中であれば画面スリープ防止（Wake Lock）を安全に再要求
+  if (isPredicting) {
+    await requestWakeLock();
+  }
+}
+
+// タブ表示切り替えイベント（戻ってきた時に再開）
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    handleResumeAudioAndWakeLock();
+  }
+});
+
+// ページ復元イベント（bfcache復元時等）
+window.addEventListener("pageshow", () => {
+  handleResumeAudioAndWakeLock();
+});
+
 
 
