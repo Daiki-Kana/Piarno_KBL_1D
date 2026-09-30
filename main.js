@@ -13,6 +13,8 @@ import * as Tone from "tone";
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("output-canvas");
 const canvasCtx = canvas.getContext("2d");
+const notesCanvas = document.getElementById("notes-canvas");
+const notesCtx = notesCanvas ? notesCanvas.getContext("2d") : null;
 const statusText = document.getElementById("status-text");
 const fpsCounter = document.getElementById("fps-counter");
 const inferenceTime = document.getElementById("inference-time");
@@ -806,6 +808,9 @@ export function selectSong(songId, withCountdown = true) {
   currentSongId = songId;
   currentSequence = SONGS[songId].sequence;
   currentSongStep = 0;
+  if (typeof noteProgressMap !== "undefined") {
+    noteProgressMap.clear();
+  }
 
   // 右上ポップアップメニューのアクティブクラス更新
   document.querySelectorAll(".song-menu-item").forEach((btn) => {
@@ -1089,6 +1094,237 @@ export function getTargetFingerColor(stepIndex) {
     name: "cyan"
   };
 }
+
+// ==========================================================================
+// 運指誘導ノーツシステム（画面上部から右下の各指先へ向かって降る光る音符）
+// ==========================================================================
+
+// 手のイラストSVG内における各指先の中央ピクセル座標（200x200 viewBox基準）
+const GUIDE_FINGER_SVG_COORDS = {
+  THUMB:  { x: 42,   y: 104 },
+  INDEX:  { x: 85.5, y: 36  },
+  MIDDLE: { x: 106,  y: 24  },
+  RING:   { x: 126.5,y: 34  },
+  PINKY:  { x: 146.5,y: 52  }
+};
+
+/**
+ * 画面右下の手のイラスト内の各指先スクリーン座標（px）を取得
+ * @param {string} fingerKey
+ * @returns {{ x: number, y: number }}
+ */
+export function getGuideFingerScreenPos(fingerKey) {
+  const widget = document.getElementById("hand-guide-widget");
+  if (!widget) {
+    return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+  }
+  const rect = widget.getBoundingClientRect();
+  const scale = rect.width / 200;
+  const c = GUIDE_FINGER_SVG_COORDS[fingerKey] || GUIDE_FINGER_SVG_COORDS.MIDDLE;
+  return {
+    x: rect.left + c.x * scale,
+    y: rect.top + c.y * scale
+  };
+}
+
+// 各ノーツのスムーズな進行度キャッシュ (stepIndex -> 現在の進行度 0.0〜1.0)
+export const noteProgressMap = new Map();
+
+// 打鍵HIT時の弾けるパーティクル配列
+const noteHitParticles = [];
+
+/**
+ * 打鍵HIT時の光のパーティクル＆リングエフェクトを発生
+ * @param {number} stepIndex
+ */
+export function triggerNoteHitEffect(stepIndex) {
+  const item = currentSequence[stepIndex];
+  if (!item) return;
+  const targetPos = getGuideFingerScreenPos(item.fingerKey);
+  const color = getTargetFingerColor(stepIndex);
+
+  // 1. 弾けるリング（ショックウェーブ）
+  noteHitParticles.push({
+    type: "ring",
+    x: targetPos.x,
+    y: targetPos.y,
+    radius: 10,
+    maxRadius: 52,
+    color: color.stroke || "#00e5ff",
+    alpha: 1.0,
+    decay: 0.05
+  });
+
+  // 2. 放射状の光火花パーティクル
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+    const speed = 2.5 + Math.random() * 3.5;
+    noteHitParticles.push({
+      type: "spark",
+      x: targetPos.x,
+      y: targetPos.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 3 + Math.random() * 2.5,
+      color: color.fill || "#00e5ff",
+      alpha: 1.0,
+      decay: 0.035 + Math.random() * 0.02
+    });
+  }
+}
+
+/**
+ * ノーツCanvasの解像度同期
+ */
+function resizeNotesCanvas() {
+  if (!notesCanvas || !notesCtx) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (notesCanvas.width !== w * dpr || notesCanvas.height !== h * dpr) {
+    notesCanvas.width = w * dpr;
+    notesCanvas.height = h * dpr;
+    notesCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+}
+window.addEventListener("resize", resizeNotesCanvas);
+
+/**
+ * 毎フレームのノーツ描画とアニメーション更新（画面上部から指先への落下）
+ */
+function updateAndRenderNotes() {
+  if (!notesCanvas || !notesCtx) return;
+  resizeNotesCanvas();
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  notesCtx.clearRect(0, 0, w, h);
+
+  const now = performance.now();
+
+  // 1. 各指のガイドライン（画面上端から指先への極薄ネオンレーン）
+  const fingerKeys = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
+  fingerKeys.forEach((fKey) => {
+    const pos = getGuideFingerScreenPos(fKey);
+    const isTarget = fKey === currentFingerKey;
+    notesCtx.beginPath();
+    notesCtx.moveTo(pos.x, 24);
+    notesCtx.lineTo(pos.x, pos.y);
+    notesCtx.strokeStyle = isTarget ? "rgba(0, 229, 255, 0.18)" : "rgba(255, 255, 255, 0.04)";
+    notesCtx.lineWidth = isTarget ? 2.0 : 1.0;
+    notesCtx.stroke();
+  });
+
+  // 2. カウントダウン中や完走中以外の時、ノーツを描画
+  if (currentSequence && currentSequence.length > 0 && !isClearing) {
+    // 現在のステップから最大4音先までを逆順で描画（先頭ノーツを手前に表示）
+    const maxAhead = 4;
+    for (let i = maxAhead - 1; i >= 0; i--) {
+      const stepIdx = currentSongStep + i;
+      if (stepIdx >= currentSequence.length) continue;
+
+      const item = currentSequence[stepIdx];
+      const targetPos = getGuideFingerScreenPos(item.fingerKey);
+      const color = getTargetFingerColor(stepIdx);
+
+      // 目標進行度: 先頭(i=0)は 1.0 (指先に完全着地)、それ以降は 0.72, 0.44, 0.16 と上部に配置
+      const targetProg = i === 0 ? 1.0 : Math.max(0.12, 1.0 - i * 0.28);
+
+      // スムーズな補間移動（Lerp）
+      let curProg = noteProgressMap.get(stepIdx);
+      if (curProg === undefined) {
+        curProg = Math.max(0, targetProg - 0.35);
+      }
+      curProg += (targetProg - curProg) * 0.14;
+      noteProgressMap.set(stepIdx, curProg);
+
+      // 画面上のY座標（画面上端 44px から指先 targetPos.y へ）
+      const startY = 44;
+      const curX = targetPos.x;
+      const curY = startY + (targetPos.y - startY) * curProg;
+
+      // 先頭ノーツ（現在叩くべき音）は指先で優しくパルス発光
+      const isLead = i === 0;
+      const pulse = isLead ? 1.0 + 0.08 * Math.sin(now * 0.007) : 1.0;
+      const alpha = Math.min(1.0, curProg * 1.5);
+
+      // ノーツの描画（ネオン発光カプセル）
+      notesCtx.save();
+      notesCtx.translate(curX, curY);
+      notesCtx.scale(pulse, pulse);
+      notesCtx.globalAlpha = alpha;
+
+      const capsuleW = 54;
+      const capsuleH = 28;
+      const radius = 14;
+
+      // 外側ネオングロー
+      notesCtx.beginPath();
+      notesCtx.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, radius);
+      notesCtx.fillStyle = color.halo || "rgba(0, 229, 255, 0.3)";
+      notesCtx.fill();
+
+      // メインカプセル背景（ダーク半透明）
+      notesCtx.beginPath();
+      notesCtx.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, radius);
+      notesCtx.fillStyle = "rgba(10, 10, 15, 0.88)";
+      notesCtx.fill();
+
+      // ネオン境界線
+      notesCtx.strokeStyle = color.stroke || "#00e5ff";
+      notesCtx.lineWidth = isLead ? 2.5 : 1.6;
+      notesCtx.stroke();
+
+      // カプセル内テキスト（運指番号＋音名、例: "3 ミ"）
+      notesCtx.fillStyle = "#ffffff";
+      notesCtx.font = "bold 13px 'Inter', sans-serif";
+      notesCtx.textAlign = "center";
+      notesCtx.textBaseline = "middle";
+      notesCtx.fillText(`${item.fingerNum} ${item.note}`, 0, 1);
+
+      notesCtx.restore();
+    }
+  }
+
+  // 3. パーティクル・ショックウェーブの描画と更新
+  for (let i = noteHitParticles.length - 1; i >= 0; i--) {
+    const p = noteHitParticles[i];
+    p.alpha -= p.decay;
+    if (p.alpha <= 0) {
+      noteHitParticles.splice(i, 1);
+      continue;
+    }
+
+    notesCtx.save();
+    notesCtx.globalAlpha = Math.max(0, p.alpha);
+
+    if (p.type === "ring") {
+      p.radius += (p.maxRadius - p.radius) * 0.16;
+      notesCtx.beginPath();
+      notesCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      notesCtx.strokeStyle = p.color;
+      notesCtx.lineWidth = 3.0 * p.alpha;
+      notesCtx.stroke();
+    } else if (p.type === "spark") {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.94;
+      p.vy *= 0.94;
+      notesCtx.beginPath();
+      notesCtx.arc(p.x, p.y, p.size * p.alpha, 0, Math.PI * 2);
+      notesCtx.fillStyle = p.color;
+      notesCtx.fill();
+    }
+
+    notesCtx.restore();
+  }
+
+  requestAnimationFrame(updateAndRenderNotes);
+}
+
+// ノーツ描画ループを開始
+requestAnimationFrame(updateAndRenderNotes);
 
 
 
@@ -2351,6 +2587,9 @@ function drawRawHandLandmarks(results) {
     if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
       tapState = "TOUCHED";
 
+      // 該当指先でノーツHIT弾けエフェクトを発火
+      triggerNoteHitEffect(currentSongStep);
+
       // 右手運指ガイドウィジェットの打鍵フィードバック（一瞬ポップ）
       const handGuideWidget = document.getElementById("hand-guide-widget");
       if (handGuideWidget) {
@@ -2383,6 +2622,7 @@ function drawRawHandLandmarks(results) {
         console.log(`[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`);
         showClearNotification(() => {
           currentSongStep = 0;
+          noteProgressMap.clear();
           const resetTarget = currentSequence[0];
           setTargetFinger(resetTarget.fingerKey);
           renderSongGuideUI();
