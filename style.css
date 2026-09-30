@@ -212,15 +212,17 @@ html, body {
 }
 
 /* ==========================================================================
-   右手運指ガイドウィジェット（ドラッグ位置移動 ＆ 自由リサイズ対応）
+   右手運指ガイドウィジェット（画面右下に半透明・中サイズで固定配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-size: 90px;
+  --hand-guide-size: 200px;
   position: absolute;
-  top: calc(16px + env(safe-area-inset-top, 0px));
-  right: calc(66px + env(safe-area-inset-right, 0px));
-  width: var(--hand-guide-size, 90px);
-  height: var(--hand-guide-size, 90px);
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(-10px + env(safe-area-inset-bottom, 0px));
+  top: auto;
+  left: auto;
+  width: var(--hand-guide-size, 200px);
+  height: var(--hand-guide-size, 200px);
   background: transparent;
   border: none;
   box-shadow: none;
@@ -230,41 +232,15 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   outline: none;
-  cursor: grab;
-  touch-action: none;
+  pointer-events: none;
   z-index: 210;
-  transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1), filter 0.15s ease;
+  opacity: 0.80;
+  transition: opacity 0.2s ease, transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1), filter 0.15s ease;
 }
 
-.hand-guide-widget:active {
-  cursor: grabbing;
-}
-
-.hand-guide-widget.active-moving {
-  cursor: grabbing !important;
-  transition: none !important;
-}
-
-.hand-guide-widget.active-resizing {
-  transition: none !important;
-}
-
-/* 左下のドラッグリサイズつまみ（対角斜めラインアイコン） */
+/* 左下のドラッグリサイズつまみ（固定配置のため非表示） */
 .hand-guide-resizer {
-  position: absolute;
-  left: -2px;
-  bottom: -2px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  padding: 3px;
-  cursor: sw-resize;
-  touch-action: none;
-  z-index: 10;
-  opacity: 0.55;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  display: none;
 }
 
 .hand-guide-resizer:hover,

@@ -22,14 +22,8 @@
         <canvas id="output-canvas"></canvas>
       </div>
 
-      <!-- 画面内を自由にドラッグ移動・サイズ変更できる右手運指ガイド -->
-      <div id="hand-guide-widget" class="hand-guide-widget" title="右手運指ガイド (ドラッグで移動、左下のつまみでサイズ変更)" role="region" aria-label="右手運指ガイド">
-        <!-- 左下：ドラッグリサイズつまみ -->
-        <div id="hand-guide-resizer" class="hand-guide-resizer" title="ドラッグしてサイズ変更" role="slider" aria-label="サイズ変更ハンドル" tabindex="0">
-          <svg viewBox="0 0 16 16" class="resizer-icon" aria-hidden="true">
-            <path d="M 3,13 L 13,3 M 6,13 L 13,6 M 9,13 L 13,9" />
-          </svg>
-        </div>
+      <!-- 画面右下に半透明・中サイズで固定配置される右手運指ガイド -->
+      <div id="hand-guide-widget" class="hand-guide-widget" title="右手運指ガイド" role="region" aria-label="右手運指ガイド">
 
         <svg class="hand-guide-svg" viewBox="0 0 200 200" aria-hidden="true">
           <!-- 手全体の一体型シームレスベース（つなぎ目が一切ない単一パス） -->
@@ -204,6 +198,13 @@
           <span class="debug-separator">/</span>
           <span class="debug-label">TH:</span>
           <span id="th-val" class="debug-val">-</span>
+        </div>
+        <div class="debug-row">
+          <span class="debug-label">VEL Y:</span>
+          <span id="vel-y-val" class="debug-val">-</span>
+          <span class="debug-separator">/</span>
+          <span class="debug-label">V_TH:</span>
+          <span id="v-th-val" class="debug-val">-</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">STATE:</span>

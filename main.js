@@ -41,6 +41,8 @@ const tipXVal = document.getElementById("tip-x-val");
 const tipYVal = document.getElementById("tip-y-val");
 const relYVal = document.getElementById("rel-y-val");
 const thVal = document.getElementById("th-val");
+const velYVal = document.getElementById("vel-y-val");
+const vThVal = document.getElementById("v-th-val");
 const stateVal = document.getElementById("state-val");
 const tapCountVal = document.getElementById("tap-count-val");
 const csvStatus = document.getElementById("csv-status");
@@ -428,6 +430,15 @@ class PointFilter {
       x: fx,
       y: fy
     };
+  }
+
+  /**
+   * 平滑化されたY軸下降速度（ピクセル/秒）を取得
+   * 下向き移動時は正の値（> 0）、上向き移動時は負の値（< 0）
+   * @returns {number}
+   */
+  getVelocityY() {
+    return this.yf.dxPrev;
   }
 }
 
@@ -881,14 +892,24 @@ export function updateCachedConnections(fingerKey) {
   currentOtherConnections = connections;
 }
 
+// 指ごとの推奨平滑化下降速度閾値（ピクセル/秒）
+// 打鍵時は急峻な下降（300〜1600 px/s）が発生し、静止待機時（0〜8 px/s）を完全に遮断
+export const FINGER_VY_THRESHOLDS = {
+  THUMB: 160,
+  INDEX: 220,
+  MIDDLE: 220,
+  RING: 180,
+  PINKY: 180
+};
+
 // 指ごとの学習閾値モデル
-// 親指（THUMB）は机面への垂直変位が小さいため、初期閾値を緩和（0.55 / 0.40）
+// 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
 export const fingerThresholdModels = {
-  THUMB: { hitRy: 0.55, liftRy: 0.40, samples: 0 },
-  MIDDLE: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
-  RING: { hitRy: 0.82, liftRy: 0.57, samples: 0 },
-  PINKY: { hitRy: 0.80, liftRy: 0.55, samples: 0 },
-  INDEX: { hitRy: 0.80, liftRy: 0.55, samples: 0 }
+  THUMB: { hitRy: 0.35, liftRy: 0.28, samples: 0 },
+  MIDDLE: { hitRy: 0.60, liftRy: 0.52, samples: 0 },
+  RING: { hitRy: 0.55, liftRy: 0.48, samples: 0 },
+  PINKY: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
+  INDEX: { hitRy: 0.60, liftRy: 0.52, samples: 0 }
 };
 
 // 指ごとのデータセット格納用
@@ -1084,6 +1105,10 @@ export function applyFingerThreshold(fingerKey) {
   }
   if (thVal) {
     thVal.textContent = hitRyThreshold.toFixed(2);
+  }
+  if (vThVal) {
+    const vyTh = FINGER_VY_THRESHOLDS[fingerKey] || 200;
+    vThVal.textContent = `${vyTh}`;
   }
 }
 
@@ -1285,6 +1310,10 @@ function trainModelForFinger(fingerKey) {
       // 親指（THUMB）は机面への垂直変位が小さいため緩和（0.30）して反応感度を向上
       const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.46 : 0.45);
       hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
+
+      // 速度ゲートにより机面待機誤爆が防止されているため、浅い打鍵でも確実に反応するよう適正範囲内にクランプ
+      const minHitTh = fingerKey === "THUMB" ? 0.30 : (fingerKey === "PINKY" ? 0.45 : 0.50);
+      hitTh = Math.max(hitTh, minHitTh);
 
       // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
       // ヒステリシス幅を極小（0.03）に設定
@@ -2310,11 +2339,16 @@ function drawRawHandLandmarks(results) {
   // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
   const targetColor = getTargetFingerColor(currentSongStep);
 
-  // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
+  // 対象指先端の平滑化下降速度（ピクセル/秒）を取得（下向き > 0、上向き < 0）
+  const tipFilter = landmarkFilters[fingerConfig.tipIdx];
+  const tipVy = tipFilter ? tipFilter.getVelocityY() : 0;
+  const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 200;
+
+  // 3. レベル2打鍵認識（変位 ＋ 平滑化下降速度ゲートにより机面静止待機誤爆を完全遮断）
   // カウントダウン中（3・2・1）、完走クリア演出中、および画面外復帰初フレームは打鍵認識を安全にスキップ
   if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired) {
-    // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
-    if (currentRy >= hitRyThreshold) {
+    // 平滑化変位が打鍵閾値以上 かつ 下降速度が速度閾値以上（勢いよく振り下ろされた瞬間）
+    if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
       tapState = "TOUCHED";
 
       // 右手運指ガイドウィジェットの打鍵フィードバック（一瞬ポップ）
@@ -2339,7 +2373,7 @@ function drawRawHandLandmarks(results) {
       updateStateHud("TOUCHED", true);
 
       console.log(
-        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
+        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, vy=${tipVy.toFixed(0)} >= V_TH:${hitVyThreshold}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
       );
 
       const isLastStep = currentSongStep === currentSequence.length - 1;
@@ -2365,15 +2399,20 @@ function drawRawHandLandmarks(results) {
       }
     }
   } else if (tapState === "TOUCHED") {
-    // 指のリフト復帰（閾値を下回ったら待機状態へ）
-    if (currentRy <= liftRyThreshold) {
+    // 指のリフト復帰：
+    // 1. 変位がリフト閾値を下回った場合（通常の位置復帰）
+    // 2. または、指先が上向きにリバウンド反転（tipVy <= -100 px/s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
+    const isLiftByPosition = currentRy <= liftRyThreshold;
+    const isLiftByRebound = tipVy <= -100 && currentRy <= (hitRyThreshold - 0.02);
+
+    if (isLiftByPosition || isLiftByRebound) {
       tapState = "IDLE";
       updateStateHud("IDLE", false);
     }
   }
 
-  // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
-  updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
+  // 4. デバッグHUDのリアルタイム表示更新（平滑化座標、相対変位、下降速度）
+  updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy, tipVy);
 
   // 5. 指定された指の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
   if (showTrackingLines) {
@@ -2496,12 +2535,15 @@ function drawTipTargetMark(x, y, color) {
  * @param {number} y
  * @param {number} ry
  */
-function updateDebugMetrics(x, y, ry) {
+function updateDebugMetrics(x, y, ry, vy = 0) {
   if (!isDebugPanelVisible) return;
   tipXVal.textContent = `${x.toFixed(1)}px`;
   tipYVal.textContent = `${y.toFixed(1)}px`;
   if (relYVal) {
     relYVal.textContent = ry !== undefined && ry !== null ? (ry >= 0 ? `+${ry.toFixed(2)}` : ry.toFixed(2)) : "-";
+  }
+  if (velYVal) {
+    velYVal.textContent = vy !== undefined && vy !== null ? (vy >= 0 ? `+${vy.toFixed(0)}` : vy.toFixed(0)) : "-";
   }
 }
 
@@ -2514,6 +2556,9 @@ function resetDebugMetrics() {
   tipYVal.textContent = "-";
   if (relYVal) {
     relYVal.textContent = "-";
+  }
+  if (velYVal) {
+    velYVal.textContent = "-";
   }
 }
 
@@ -2869,209 +2914,23 @@ if (trackingLineToggleBtn) {
 }
 
 // ==========================================================================
-// 画面内の右手運指ガイドウィジェット（自由ドラッグ移動 ＆ 40px〜420pxリサイズ対応）
+// 画面内の右手運指ガイドウィジェット（画面右下・中サイズ 130px 固定配置）
 // ==========================================================================
 const handGuideWidget = document.getElementById("hand-guide-widget");
-const handGuideResizer = document.getElementById("hand-guide-resizer");
-
 if (handGuideWidget) {
-  const KEY_SIZE = "piarno_hand_guide_custom_size";
-  const KEY_POS_X = "piarno_hand_guide_pos_x";
-  const KEY_POS_Y = "piarno_hand_guide_pos_y";
-  const MIN_SIZE = 40;
-  const MAX_SIZE = 420;
-  const DEFAULT_SIZE = 90;
-
-  // 1. 前回保存されたサイズを復元（40px〜420px）
-  const savedSize = parseFloat(localStorage.getItem(KEY_SIZE));
-  const initialSize = !isNaN(savedSize) && savedSize >= MIN_SIZE && savedSize <= MAX_SIZE ? savedSize : DEFAULT_SIZE;
-  handGuideWidget.style.setProperty("--hand-guide-size", `${initialSize}px`);
-
-  // 2. 前回保存された位置（X, Y）を復元
-  const savedPosX = parseFloat(localStorage.getItem(KEY_POS_X));
-  const savedPosY = parseFloat(localStorage.getItem(KEY_POS_Y));
-
-  const clampPosition = (x, y, w, h) => {
-    const maxX = Math.max(0, window.innerWidth - w);
-    const maxY = Math.max(0, window.innerHeight - h);
-    return {
-      x: Math.max(0, Math.min(maxX, x)),
-      y: Math.max(0, Math.min(maxY, y)),
-    };
-  };
-
-  if (!isNaN(savedPosX) && !isNaN(savedPosY)) {
-    const clamped = clampPosition(savedPosX, savedPosY, initialSize, initialSize);
-    handGuideWidget.style.left = `${clamped.x}px`;
-    handGuideWidget.style.top = `${clamped.y}px`;
-    handGuideWidget.style.right = "auto";
+  // 過去のドラッグ移動座標やリサイズ値がlocalStorageに残っている場合はクリーンアップ
+  try {
+    localStorage.removeItem("piarno_hand_guide_custom_size");
+    localStorage.removeItem("piarno_hand_guide_pos_x");
+    localStorage.removeItem("piarno_hand_guide_pos_y");
+  } catch {
+    // localStorage制限環境用フォールバック
   }
-
-  // ウィンドウリサイズ時のはみ出し防止
-  window.addEventListener("resize", () => {
-    const rect = handGuideWidget.getBoundingClientRect();
-    const clamped = clampPosition(rect.left, rect.top, rect.width, rect.height);
-    if (rect.left !== clamped.x || rect.top !== clamped.y) {
-      handGuideWidget.style.left = `${clamped.x}px`;
-      handGuideWidget.style.top = `${clamped.y}px`;
-      handGuideWidget.style.right = "auto";
-    }
-  });
-
-  // 3. 手本体のドラッグによる画面内「位置移動」
-  let isMoving = false;
-  let moveStartPointerX = 0;
-  let moveStartPointerY = 0;
-  let moveStartLeft = 0;
-  let moveStartTop = 0;
-
-  handGuideWidget.addEventListener("pointerdown", (e) => {
-    // リサイズつまみをクリックした場合は位置移動を行わない（リサイズ優先）
-    if (handGuideResizer && (e.target === handGuideResizer || handGuideResizer.contains(e.target))) {
-      return;
-    }
-    e.stopPropagation();
-    e.preventDefault();
-    isMoving = true;
-    moveStartPointerX = e.clientX;
-    moveStartPointerY = e.clientY;
-
-    const rect = handGuideWidget.getBoundingClientRect();
-    moveStartLeft = rect.left;
-    moveStartTop = rect.top;
-
-    handGuideWidget.classList.add("active-moving");
-    handGuideWidget.setPointerCapture(e.pointerId);
-  });
-
-  handGuideWidget.addEventListener("pointermove", (e) => {
-    if (!isMoving) return;
-    e.stopPropagation();
-    e.preventDefault();
-
-    const deltaX = e.clientX - moveStartPointerX;
-    const deltaY = e.clientY - moveStartPointerY;
-
-    const rect = handGuideWidget.getBoundingClientRect();
-    const clamped = clampPosition(moveStartLeft + deltaX, moveStartTop + deltaY, rect.width, rect.height);
-
-    handGuideWidget.style.left = `${clamped.x}px`;
-    handGuideWidget.style.top = `${clamped.y}px`;
-    handGuideWidget.style.right = "auto";
-  });
-
-  const onMoveEnd = (e) => {
-    if (!isMoving) return;
-    isMoving = false;
-    handGuideWidget.classList.remove("active-moving");
-    try {
-      handGuideWidget.releasePointerCapture(e.pointerId);
-    } catch {
-      // 既に解放済みの場合は無視
-    }
-
-    // 最終移動位置を永続化
-    const rect = handGuideWidget.getBoundingClientRect();
-    try {
-      localStorage.setItem(KEY_POS_X, Math.round(rect.left).toString());
-      localStorage.setItem(KEY_POS_Y, Math.round(rect.top).toString());
-    } catch {
-      // localStorage制限環境用フォールバック
-    }
-  };
-
-  handGuideWidget.addEventListener("pointerup", onMoveEnd);
-  handGuideWidget.addEventListener("pointercancel", onMoveEnd);
-
-  // 4. 左下つまみによる「サイズ変更」（40px〜420px）
-  if (handGuideResizer) {
-    let isResizing = false;
-    let resizeStartPointerX = 0;
-    let resizeStartPointerY = 0;
-    let resizeStartSize = initialSize;
-    let resizeStartLeft = 0;
-
-    handGuideResizer.addEventListener("pointerdown", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      isResizing = true;
-      resizeStartPointerX = e.clientX;
-      resizeStartPointerY = e.clientY;
-
-      const rect = handGuideWidget.getBoundingClientRect();
-      resizeStartSize = rect.width || initialSize;
-      resizeStartLeft = rect.left;
-
-      handGuideWidget.classList.add("active-resizing");
-      handGuideResizer.classList.add("active-drag");
-      handGuideResizer.setPointerCapture(e.pointerId);
-    });
-
-    handGuideResizer.addEventListener("pointermove", (e) => {
-      if (!isResizing) return;
-      e.stopPropagation();
-      e.preventDefault();
-
-      // 左下のつまみを左(画面内側)または下へ引くと拡大
-      const deltaX = resizeStartPointerX - e.clientX;
-      const deltaY = e.clientY - resizeStartPointerY;
-      const delta = (deltaX + deltaY) / 2;
-
-      const newSize = Math.round(Math.max(MIN_SIZE, Math.min(MAX_SIZE, resizeStartSize + delta)));
-      handGuideWidget.style.setProperty("--hand-guide-size", `${newSize}px`);
-
-      // リサイズ時に画面右端・下端からはみ出さないよう自動調整
-      const rect = handGuideWidget.getBoundingClientRect();
-      const clamped = clampPosition(rect.left, rect.top, newSize, newSize);
-      if (rect.left !== clamped.x || rect.top !== clamped.y) {
-        handGuideWidget.style.left = `${clamped.x}px`;
-        handGuideWidget.style.top = `${clamped.y}px`;
-        handGuideWidget.style.right = "auto";
-      }
-    });
-
-    const onResizeEnd = (e) => {
-      if (!isResizing) return;
-      isResizing = false;
-      handGuideWidget.classList.remove("active-resizing");
-      handGuideResizer.classList.remove("active-drag");
-      try {
-        handGuideResizer.releasePointerCapture(e.pointerId);
-      } catch {
-        // 既に解放済みの場合は無視
-      }
-
-      // 最終サイズを永続化
-      const finalRect = handGuideWidget.getBoundingClientRect();
-      const finalSize = Math.round(finalRect.width || initialSize);
-      try {
-        localStorage.setItem(KEY_SIZE, finalSize.toString());
-        localStorage.setItem(KEY_POS_X, Math.round(finalRect.left).toString());
-        localStorage.setItem(KEY_POS_Y, Math.round(finalRect.top).toString());
-      } catch {
-        // localStorage制限環境用フォールバック
-      }
-    };
-
-    handGuideResizer.addEventListener("pointerup", onResizeEnd);
-    handGuideResizer.addEventListener("pointercancel", onResizeEnd);
-
-    // キーボード操作対応（矢印キーで微調整）
-    handGuideResizer.addEventListener("keydown", (e) => {
-      let currentVal = parseFloat(getComputedStyle(handGuideWidget).getPropertyValue("--hand-guide-size")) || DEFAULT_SIZE;
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-        e.preventDefault();
-        const nextVal = Math.min(MAX_SIZE, currentVal + 10);
-        handGuideWidget.style.setProperty("--hand-guide-size", `${nextVal}px`);
-        localStorage.setItem(KEY_SIZE, nextVal.toString());
-      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const nextVal = Math.max(MIN_SIZE, currentVal - 10);
-        handGuideWidget.style.setProperty("--hand-guide-size", `${nextVal}px`);
-        localStorage.setItem(KEY_SIZE, nextVal.toString());
-      }
-    });
-  }
+  handGuideWidget.style.left = "";
+  handGuideWidget.style.top = "";
+  handGuideWidget.style.right = "";
+  handGuideWidget.style.bottom = "";
+  handGuideWidget.style.setProperty("--hand-guide-size", "200px");
 }
 
 // 初回オーディオ開始バナーのクリックイベント
