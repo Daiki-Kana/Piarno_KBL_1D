@@ -38,6 +38,82 @@
         <div id="countdown-text" class="countdown-text">3</div>
       </div>
 
+      <!-- 右手固定イラスト＆垂直ノーツガイドUI -->
+      <div id="notes-guide-container" class="notes-guide-container">
+        <!-- 上部ヘッダー（曲名・ステップ進行・運指ヘルプ） -->
+        <div class="guide-header">
+          <div class="guide-header-left">
+            <span class="guide-icon">♪</span>
+            <span id="guide-song-title" class="guide-song-title">彼こそが海賊</span>
+          </div>
+          <div class="guide-header-right">
+            <span id="guide-target-badge" class="guide-target-badge">2 レ (人差し指)</span>
+            <span id="guide-step-progress" class="guide-step-progress">1 / 16</span>
+          </div>
+        </div>
+
+        <!-- ガイドライン・ノーツ・手イラストの描画メインステージ -->
+        <div class="guide-stage">
+          <!-- 背景垂直レーン（CSS） -->
+          <div class="guide-lanes-bg">
+            <div class="guide-lane-line" style="left: 14.4%;"></div>
+            <div class="guide-lane-line" style="left: 32.2%;"></div>
+            <div class="guide-lane-line" style="left: 50.0%;"></div>
+            <div class="guide-lane-line" style="left: 67.8%;"></div>
+            <div class="guide-lane-line" style="left: 85.6%;"></div>
+          </div>
+
+          <!-- 手の固定イラスト（SVG: 右手甲側視点 1:親指〜5:小指） -->
+          <svg id="hand-guide-svg" class="hand-guide-svg" viewBox="0 0 360 160" preserveAspectRatio="xMidYMid meet">
+            <!-- 手の甲・ひらベースシェル -->
+            <path class="hand-palm" d="M 125,160 C 100,150 72,130 66,108 C 60,94 72,88 82,94 C 92,100 102,96 114,92 L 246,92 C 258,96 272,100 294,102 C 314,104 322,120 316,134 C 308,150 258,160 235,160 Z" />
+            
+            <!-- 親指 (THUMB: 1 ド) -->
+            <g id="svg-finger-THUMB" class="hand-finger" data-key="THUMB">
+              <path class="finger-body" d="M 68,94 L 42,55 C 36,45 48,36 57,42 L 84,78 Z" />
+              <circle class="finger-tip-ring" cx="52" cy="50" r="16" />
+              <text class="finger-num-text" x="52" y="47">1</text>
+              <text class="finger-note-text" x="52" y="58">ド</text>
+            </g>
+
+            <!-- 人差し指 (INDEX: 2 レ) -->
+            <g id="svg-finger-INDEX" class="hand-finger" data-key="INDEX">
+              <rect class="finger-body" x="103" y="22" width="26" height="72" rx="13" />
+              <circle class="finger-tip-ring" cx="116" cy="22" r="16" />
+              <text class="finger-num-text" x="116" y="19">2</text>
+              <text class="finger-note-text" x="116" y="30">レ</text>
+            </g>
+
+            <!-- 中指 (MIDDLE: 3 ミ) -->
+            <g id="svg-finger-MIDDLE" class="hand-finger" data-key="MIDDLE">
+              <rect class="finger-body" x="167" y="14" width="26" height="80" rx="13" />
+              <circle class="finger-tip-ring" cx="180" cy="14" r="16" />
+              <text class="finger-num-text" x="180" y="11">3</text>
+              <text class="finger-note-text" x="180" y="22">ミ</text>
+            </g>
+
+            <!-- 薬指 (RING: 4 ファ) -->
+            <g id="svg-finger-RING" class="hand-finger" data-key="RING">
+              <rect class="finger-body" x="231" y="24" width="26" height="70" rx="13" />
+              <circle class="finger-tip-ring" cx="244" cy="24" r="16" />
+              <text class="finger-num-text" x="244" y="21">4</text>
+              <text class="finger-note-text" x="244" y="32">ファ</text>
+            </g>
+
+            <!-- 小指 (PINKY: 5 ソ) -->
+            <g id="svg-finger-PINKY" class="hand-finger" data-key="PINKY">
+              <rect class="finger-body" x="296" y="48" width="24" height="56" rx="12" />
+              <circle class="finger-tip-ring" cx="308" cy="48" r="16" />
+              <text class="finger-num-text" x="308" y="45">5</text>
+              <text class="finger-note-text" x="308" y="56">ソ</text>
+            </g>
+          </svg>
+
+          <!-- 前面ノーツ＆ヒットエフェクトCanvas -->
+          <canvas id="notes-canvas" class="notes-canvas"></canvas>
+        </div>
+      </div>
+
 
       <!-- デバッグHUD（左下） -->
       <div id="debug-panel" class="debug-panel">

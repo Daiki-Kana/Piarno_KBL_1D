@@ -309,3 +309,232 @@ html, body {
   transition: transform 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* ==========================================================================
+   右手固定イラスト＆垂直ノーツガイド（打鍵待ち型HUD）
+   ========================================================================== */
+:root {
+  --active-color-stroke: rgba(0, 229, 255, 0.95);
+  --active-color-glow: rgba(0, 229, 255, 0.85);
+  --active-color-fill: #00e5ff;
+}
+
+.notes-guide-container {
+  position: absolute;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 420px);
+  height: 310px;
+  background-color: rgba(10, 12, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 150;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* ガイドヘッダー（曲名・ステップ進行・ターゲット運指） */
+.guide-header {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+}
+
+.guide-header-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.guide-icon {
+  font-size: 13px;
+  color: #00e5ff;
+}
+
+.guide-song-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0f0f5;
+  letter-spacing: 0.5px;
+}
+
+.guide-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-target-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #000000;
+  background-color: var(--active-color-fill, #00e5ff);
+  padding: 2px 7px;
+  border-radius: 4px;
+  box-shadow: 0 0 10px var(--active-color-glow, rgba(0, 229, 255, 0.6));
+  transition: all 0.2s ease;
+}
+
+.guide-step-progress {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8892b0;
+  font-family: monospace;
+}
+
+/* ガイドメインステージ（レーン・SVG手・Canvasの重ね合わせ） */
+.guide-stage {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 背景の垂直レーン境界線 */
+.guide-lanes-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.guide-lane-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  transform: translateX(-50%);
+}
+
+/* 右手固定イラストSVG（下部配置） */
+.hand-guide-svg {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  width: 100%;
+  height: 140px;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+}
+
+/* 手の甲・ひらベース */
+.hand-palm {
+  fill: rgba(22, 25, 34, 0.92);
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* 通常時の指（クリック/タップでもテスト打鍵可能） */
+.hand-finger {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.3, 1), filter 0.2s ease;
+  transform-origin: center bottom;
+}
+
+.hand-finger .finger-body {
+  fill: rgba(28, 32, 44, 0.88);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.5;
+  transition: all 0.2s ease;
+}
+
+.hand-finger .finger-tip-ring {
+  fill: rgba(16, 18, 26, 0.95);
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 2;
+  transition: all 0.2s ease;
+}
+
+.hand-finger .finger-num-text {
+  font-size: 11px;
+  font-weight: 800;
+  fill: #8892b0;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: fill 0.2s ease;
+}
+
+.hand-finger .finger-note-text {
+  font-size: 8px;
+  font-weight: 600;
+  fill: #5a647d;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: fill 0.2s ease;
+}
+
+/* 指定指（アクティブハイライト状態） */
+.hand-finger.active .finger-body {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: var(--active-color-stroke, #00e5ff);
+  stroke-width: 2;
+}
+
+.hand-finger.active .finger-tip-ring {
+  fill: var(--active-color-fill, #00e5ff);
+  stroke: #ffffff;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 10px var(--active-color-glow, rgba(0, 229, 255, 0.8)));
+  animation: fingerRingPulse 1.2s infinite alternate ease-in-out;
+}
+
+.hand-finger.active .finger-num-text {
+  fill: #000000;
+  font-weight: 900;
+}
+
+.hand-finger.active .finger-note-text {
+  fill: #000000;
+  font-weight: 800;
+}
+
+/* 打鍵時（タップ押下アクション） */
+.hand-finger.pressed {
+  transform: translateY(4px) scale(0.97);
+}
+
+.hand-finger.pressed .finger-tip-ring {
+  fill: #ffffff !important;
+  filter: drop-shadow(0 0 18px #ffffff) !important;
+}
+
+@keyframes fingerRingPulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px var(--active-color-glow, rgba(0, 229, 255, 0.7)));
+  }
+  100% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 14px var(--active-color-glow, rgba(0, 229, 255, 0.95)));
+  }
+}
+
+/* 前面ノーツ＆ヒットエフェクトCanvas */
+.notes-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+

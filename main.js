@@ -610,12 +610,18 @@ export function selectSong(songId) {
   // 1音目のターゲット指をセット＆ガイドUI再描画
   setTargetFinger(currentSequence[0].fingerKey);
   renderSongGuideUI();
+  if (notesGuide) {
+    notesGuide.resetNotes();
+  }
 
   // カウントダウン開始
   startCountdown(() => {
     console.log(`[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`);
   });
 }
+
+// ノーツガイドシステム（打鍵待ち型HUDコントローラー）インスタンス参照
+export let notesGuide = null;
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
 // 手首（0）から親指・人差し指・中指・薬指・小指（20）まで全関節を独立して常時平滑化
@@ -676,6 +682,11 @@ export function renderSongGuideUI() {
   }
   if (targetTapProgress) {
     targetTapProgress.textContent = `${currentItem.step} / ${currentSequence.length}`;
+  }
+
+  // 固定イラスト＆ノーツガイドHUDのUI更新
+  if (notesGuide) {
+    notesGuide.updateUI();
   }
 }
 
@@ -1696,6 +1707,11 @@ function drawRawHandLandmarks(results) {
       const fromTipX = smoothTip.x;
       const fromTipY = smoothTip.y;
 
+      // ノーツガイドシステムへ正解打鍵ヒットを通知
+      if (notesGuide) {
+        notesGuide.triggerHit(currentTarget);
+      }
+
       // 次の音符へステップ進行
       currentSongStep = (currentSongStep + 1) % currentSequence.length;
       const nextTarget = currentSequence[currentSongStep];
@@ -1982,5 +1998,551 @@ if (audioStartBanner) {
 // 初期ターゲット指（彼こそが海賊 第1音: 人差し指 2 レ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);
 renderSongGuideUI();
+
+/**
+ * ==========================================================================
+ * 右手固定イラスト＆垂直ノーツガイドシステム (打鍵待ち型HUD)
+ * ==========================================================================
+ */
+export class NotesGuideController {
+  constructor() {
+    this.container = document.getElementById("notes-guide-container");
+    this.canvas = document.getElementById("notes-canvas");
+    this.ctx = this.canvas ? this.canvas.getContext("2d") : null;
+    this.songTitleEl = document.getElementById("guide-song-title");
+    this.stepProgressEl = document.getElementById("guide-step-progress");
+    this.targetBadgeEl = document.getElementById("guide-target-badge");
+    this.handSvg = document.getElementById("hand-guide-svg");
+
+    // 各指のSVG内定義座標（viewBox="0 0 360 160"基準、1:親指〜5:小指）
+    this.fingerDefs = {
+      THUMB:  { fingerNum: 1, note: "ド", label: "親指",   svgX: 52,  svgY: 50 },
+      INDEX:  { fingerNum: 2, note: "レ", label: "人差し指", svgX: 116, svgY: 22 },
+      MIDDLE: { fingerNum: 3, note: "ミ", label: "中指",   svgX: 180, svgY: 14 },
+      RING:   { fingerNum: 4, note: "ファ", label: "薬指",   svgX: 244, svgY: 24 },
+      PINKY:  { fingerNum: 5, note: "ソ", label: "小指",   svgX: 308, svgY: 48 }
+    };
+
+    // レーンおよび各指先端のCanvas実座標
+    this.laneCoords = {};
+    this.width = 0;
+    this.height = 0;
+    this.dpr = window.devicePixelRatio || 1;
+
+    // ノーツキューと演出オブジェクト
+    this.activeNotes = []; // 画面内に表示・アニメーション中のノーツ
+    this.particles = [];   // ヒット時の光粒子
+    this.shockwaves = [];  // ヒット時の衝撃波リング
+    this.pulseAngle = 0;   // 待機ノーツの呼吸パルス用
+    this.streamOffset = 0; // ガイドライン上を流れる光粒子のオフセット
+
+    this.init();
+  }
+
+  /**
+   * 初期化（リサイズ監視とループ開始）
+   */
+  init() {
+    if (!this.canvas || !this.ctx) return;
+    this.handleResize();
+    window.addEventListener("resize", () => this.handleResize());
+
+    // アニメーションループ開始（独立した超滑らか60fps描画）
+    requestAnimationFrame(() => this.renderLoop());
+
+    // 初期ノーツのセットアップとUI更新
+    this.resetNotes();
+    this.updateUI();
+
+    // 手のイラスト各指のタップ/クリック操作リスナー（画面タップでもテスト演奏可能）
+    Object.keys(this.fingerDefs).forEach((key) => {
+      const el = document.getElementById(`svg-finger-${key}`);
+      if (el) {
+        el.addEventListener("pointerdown", (e) => {
+          e.stopPropagation();
+          ensureAudioContext();
+
+          const currentTarget = currentSequence[currentSongStep];
+          if (!currentTarget) return;
+
+          // 正解メロディ音の発音
+          playTapSound(currentTarget.rightNote || currentTarget.freq, true);
+          if (currentTarget.autoLeftNote) {
+            playTapSound(currentTarget.autoLeftNote, false);
+          }
+
+          // ノーツガイドヒット演出
+          this.triggerHit(currentTarget);
+
+          // 楽曲ステップ進行とターゲット指更新
+          currentSongStep = (currentSongStep + 1) % currentSequence.length;
+          const nextTarget = currentSequence[currentSongStep];
+          setTargetFinger(nextTarget.fingerKey);
+          renderSongGuideUI();
+        });
+      }
+    });
+  }
+
+  /**
+   * コンテナサイズとDPIに合わせたCanvasおよび各指座標の再計算
+   */
+  handleResize() {
+    if (!this.canvas) return;
+    const stage = this.canvas.parentElement;
+    if (!stage) return;
+
+    const rect = stage.getBoundingClientRect();
+    this.width = rect.width || 360;
+    this.height = rect.height || 260;
+    this.dpr = window.devicePixelRatio || 1;
+
+    this.canvas.width = Math.round(this.width * this.dpr);
+    this.canvas.height = Math.round(this.height * this.dpr);
+
+    // 手のイラストSVGの配置（CSSで height: 140px, bottom: 6px に設定）
+    const svgHeight = 140;
+    const svgBottomOffset = 6;
+    const svgTopY = this.height - svgBottomOffset - svgHeight;
+
+    Object.keys(this.fingerDefs).forEach((key) => {
+      const def = this.fingerDefs[key];
+      const normX = def.svgX / 360;
+      const normY = def.svgY / 160;
+
+      const hitX = this.width * normX;
+      const hitY = svgTopY + normY * svgHeight;
+
+      this.laneCoords[key] = {
+        hitX: hitX,
+        hitY: hitY
+      };
+    });
+
+    // 既存ノーツの目標座標を更新
+    this.activeNotes.forEach((n) => {
+      const coords = this.laneCoords[n.fingerKey];
+      if (coords) {
+        n.hitX = coords.hitX;
+        n.hitY = coords.hitY;
+        n.x = coords.hitX;
+        n.targetY = this.getTargetYForState(n.state, coords.hitY);
+      }
+    });
+  }
+
+  /**
+   * ノーツの状態（現在待機 / 1つ先 / 2つ先）に応じた目標Y座標の取得
+   */
+  getTargetYForState(state, hitY) {
+    if (state === "WAITING" || state === "CURRENT") {
+      return hitY; // 指先のヒットターゲット位置
+    } else if (state === "NEXT_1") {
+      return hitY - 68; // 1つ先（中腹）
+    } else if (state === "NEXT_2") {
+      return hitY - 124; // 2つ先（上部）
+    }
+    return -40; // 出現初期Y
+  }
+
+  /**
+   * ノーツキューのリセットと初期生成
+   */
+  resetNotes() {
+    this.activeNotes = [];
+    this.particles = [];
+    this.shockwaves = [];
+
+    if (!currentSequence || currentSequence.length === 0) return;
+
+    // 0: 現在打鍵待ちノーツ（最上部から指先へ降下）
+    const note0 = this.createNote(currentSongStep, "WAITING", -40);
+    if (note0) this.activeNotes.push(note0);
+
+    // 1: 1つ先の予告ノーツ（上部から中腹へ降下）
+    const nextIdx1 = (currentSongStep + 1) % currentSequence.length;
+    const note1 = this.createNote(nextIdx1, "NEXT_1", -40);
+    if (note1) this.activeNotes.push(note1);
+
+    // 2: 2つ先の予告ノーツ
+    const nextIdx2 = (currentSongStep + 2) % currentSequence.length;
+    const note2 = this.createNote(nextIdx2, "NEXT_2", -40);
+    if (note2) this.activeNotes.push(note2);
+
+    this.updateUI();
+  }
+
+  /**
+   * 1つのノーツオブジェクトを生成
+   */
+  createNote(seqIndex, state, startY) {
+    const item = currentSequence[seqIndex];
+    if (!item) return null;
+
+    const fingerKey = item.fingerKey || "INDEX";
+    const coords = this.laneCoords[fingerKey] || { hitX: this.width * 0.5, hitY: this.height * 0.7 };
+    const color = getTargetFingerColor(seqIndex);
+    const targetY = this.getTargetYForState(state, coords.hitY);
+
+    return {
+      seqIndex: seqIndex,
+      step: item.step,
+      fingerKey: fingerKey,
+      fingerNum: item.fingerNum,
+      note: item.note,
+      color: color,
+      hitX: coords.hitX,
+      hitY: coords.hitY,
+      x: coords.hitX,
+      y: startY !== undefined ? startY : -40,
+      targetY: targetY,
+      state: state, // 'WAITING', 'NEXT_1', 'NEXT_2', 'HIT'
+      scale: state === "WAITING" ? 1.0 : (state === "NEXT_1" ? 0.85 : 0.7),
+      alpha: state === "WAITING" ? 1.0 : (state === "NEXT_1" ? 0.65 : 0.35),
+      isHit: false,
+      hitProgress: 0,
+      spawnTime: performance.now()
+    };
+  }
+
+  /**
+   * 正解打鍵時のアクション
+   */
+  triggerHit(targetItem) {
+    // 現在の打鍵待ちノーツを HIT 状態へ移行
+    const currentNote = this.activeNotes.find((n) => (n.state === "WAITING" || n.state === "CURRENT") && !n.isHit);
+    if (currentNote) {
+      currentNote.isHit = true;
+      currentNote.state = "HIT";
+      currentNote.hitProgress = 0;
+
+      // 衝撃波リングを生成
+      this.shockwaves.push({
+        x: currentNote.x,
+        y: currentNote.y,
+        radius: 16,
+        maxRadius: 54,
+        alpha: 1,
+        color: currentNote.color.stroke
+      });
+
+      // スパーク光粒子を生成（14個）
+      for (let i = 0; i < 14; i++) {
+        const angle = (Math.PI * 2 * i) / 14 + (Math.random() - 0.5) * 0.35;
+        const speed = 2.8 + Math.random() * 4.2;
+        this.particles.push({
+          x: currentNote.x,
+          y: currentNote.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 2.5 + Math.random() * 2.5,
+          alpha: 1,
+          decay: 0.032 + Math.random() * 0.02,
+          color: currentNote.color.fill
+        });
+      }
+    }
+
+    // 手のイラストSVGの指を一瞬押し込むアニメーション
+    const fingerKey = targetItem?.fingerKey || currentFingerKey;
+    const fingerEl = document.getElementById(`svg-finger-${fingerKey}`);
+    if (fingerEl) {
+      fingerEl.classList.add("pressed");
+      setTimeout(() => {
+        fingerEl.classList.remove("pressed");
+      }, 160);
+    }
+
+    // キューを1つ進める
+    // NEXT_1 -> WAITING（中腹から指先へ降下）
+    const next1 = this.activeNotes.find((n) => n.state === "NEXT_1");
+    if (next1) {
+      next1.state = "WAITING";
+      const coords = this.laneCoords[next1.fingerKey];
+      next1.targetY = coords ? coords.hitY : next1.targetY;
+    }
+
+    // NEXT_2 -> NEXT_1（上部から中腹へ降下）
+    const next2 = this.activeNotes.find((n) => n.state === "NEXT_2");
+    if (next2) {
+      next2.state = "NEXT_1";
+      const coords = this.laneCoords[next2.fingerKey];
+      next2.targetY = coords ? coords.hitY - 68 : next2.targetY;
+    }
+
+    // 新たに2つ先のノーツを追加（最上部から出現）
+    const newSeqIdx = (currentSongStep + 2) % currentSequence.length;
+    const newNote = this.createNote(newSeqIdx, "NEXT_2", -40);
+    if (newNote) {
+      this.activeNotes.push(newNote);
+    }
+
+    this.updateUI();
+  }
+
+  /**
+   * UIおよびSVG手イラストのアクティブ状態更新
+   */
+  updateUI() {
+    const currentItem = currentSequence[currentSongStep];
+    if (!currentItem) return;
+
+    // ヘッダー情報の更新
+    if (this.songTitleEl) {
+      this.songTitleEl.textContent = SONGS[currentSongId]?.title || "Piano Play";
+    }
+    if (this.stepProgressEl) {
+      this.stepProgressEl.textContent = `${currentItem.step} / ${currentSequence.length}`;
+    }
+
+    const fingerDef = this.fingerDefs[currentItem.fingerKey] || { label: "指" };
+    if (this.targetBadgeEl) {
+      this.targetBadgeEl.textContent = `${currentItem.fingerNum} ${currentItem.note} (${fingerDef.label})`;
+    }
+
+    // テーマカラーの取得とCSS変数への適用
+    const targetColor = getTargetFingerColor(currentSongStep);
+    document.documentElement.style.setProperty("--active-color-stroke", targetColor.stroke);
+    document.documentElement.style.setProperty("--active-color-fill", targetColor.fill);
+    document.documentElement.style.setProperty("--active-color-glow", targetColor.glow);
+
+    // 手のイラストSVGの各指のactiveクラス切り替え
+    Object.keys(this.fingerDefs).forEach((key) => {
+      const el = document.getElementById(`svg-finger-${key}`);
+      if (el) {
+        if (key === currentItem.fingerKey) {
+          el.classList.add("active");
+        } else {
+          el.classList.remove("active");
+        }
+      }
+    });
+  }
+
+  /**
+   * 毎フレームのCanvas描画アニメーションループ（60fps超）
+   */
+  renderLoop() {
+    if (!this.ctx || !this.canvas) return;
+
+    this.pulseAngle += 0.055;
+    this.streamOffset = (this.streamOffset + 1.2) % 30;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.scale(this.dpr, this.dpr);
+    ctx.clearRect(0, 0, this.width, this.height);
+
+    const currentItem = currentSequence[currentSongStep];
+    const activeFingerKey = currentItem?.fingerKey;
+    const targetColor = getTargetFingerColor(currentSongStep);
+
+    // 1. 垂直ガイドライン（レーン）の描画
+    Object.keys(this.laneCoords).forEach((key) => {
+      const coords = this.laneCoords[key];
+      const isActive = key === activeFingerKey;
+
+      ctx.save();
+      if (isActive) {
+        // アクティブ指の垂直ガイドライン（ネオングラデーション＆グロー）
+        const grad = ctx.createLinearGradient(coords.hitX, 0, coords.hitX, coords.hitY);
+        grad.addColorStop(0, "rgba(255, 255, 255, 0.05)");
+        grad.addColorStop(0.3, targetColor.stroke);
+        grad.addColorStop(1, "#ffffff");
+
+        ctx.shadowColor = targetColor.glow;
+        ctx.shadowBlur = 14;
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2.4;
+
+        ctx.beginPath();
+        ctx.moveTo(coords.hitX, 0);
+        ctx.lineTo(coords.hitX, coords.hitY);
+        ctx.stroke();
+
+        // ガイドライン上を上から下へ流れる光の微粒子ストリーム
+        ctx.shadowBlur = 0;
+        for (let y = this.streamOffset; y < coords.hitY; y += 30) {
+          const pAlpha = 0.25 + (y / coords.hitY) * 0.75;
+          ctx.fillStyle = `rgba(255, 255, 255, ${pAlpha.toFixed(2)})`;
+          ctx.beginPath();
+          ctx.arc(coords.hitX, y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // 非アクティブなガイドライン（細い半透明破線）
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(coords.hitX, 0);
+        ctx.lineTo(coords.hitX, coords.hitY);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    // 2. 指先ターゲットリングの強調（SVG指先と重畳）
+    Object.keys(this.laneCoords).forEach((key) => {
+      const coords = this.laneCoords[key];
+      const isActive = key === activeFingerKey;
+
+      if (isActive) {
+        ctx.save();
+        const pulse = Math.sin(this.pulseAngle) * 3;
+        const baseR = 17;
+        const r = baseR + pulse;
+
+        // 呼吸する外枠リング
+        ctx.shadowColor = targetColor.glow;
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = targetColor.stroke;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(coords.hitX, coords.hitY, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 「TAP!」の微細な波紋リング（定期的に拡大）
+        const ripplePhase = (this.pulseAngle * 0.6) % 1;
+        const rippleR = baseR + ripplePhase * 20;
+        const rippleAlpha = (1 - ripplePhase) * 0.6;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${rippleAlpha.toFixed(2)})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(coords.hitX, coords.hitY, rippleR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    });
+
+    // 3. ノーツの更新と描画
+    for (let i = this.activeNotes.length - 1; i >= 0; i--) {
+      const note = this.activeNotes[i];
+
+      // 目標Yへの滑らかなイージング降下追従
+      note.y += (note.targetY - note.y) * 0.22;
+
+      // 目標スケール・透明度への追従
+      const targetScale = note.state === "WAITING" ? 1.0 : (note.state === "NEXT_1" ? 0.85 : 0.7);
+      const targetAlpha = note.state === "WAITING" ? 1.0 : (note.state === "NEXT_1" ? 0.65 : 0.35);
+      note.scale += (targetScale - note.scale) * 0.2;
+      note.alpha += (targetAlpha - note.alpha) * 0.2;
+
+      if (note.isHit) {
+        // ヒットアニメーション（拡大・白熱閃光・フェードアウト）
+        note.hitProgress += 0.07;
+        note.scale = 1.0 + note.hitProgress * 0.8;
+        note.alpha = Math.max(0, 1.0 - note.hitProgress * 1.4);
+
+        if (note.hitProgress >= 1.0 || note.alpha <= 0) {
+          this.activeNotes.splice(i, 1);
+          continue;
+        }
+      }
+
+      // ノーツ自体の描画
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, note.alpha));
+      ctx.translate(note.x, note.y);
+      ctx.scale(note.scale, note.scale);
+
+      const isCurrentWaiting = (note.state === "WAITING" || note.state === "CURRENT") && !note.isHit;
+      const noteColor = note.color;
+
+      // 角丸カプセルノーツの背景（ネオングロー）
+      ctx.shadowColor = noteColor.glow;
+      ctx.shadowBlur = isCurrentWaiting ? 20 : 8;
+      ctx.fillStyle = isCurrentWaiting ? noteColor.fill : "rgba(35, 40, 55, 0.9)";
+      ctx.strokeStyle = note.isHit ? "#ffffff" : noteColor.stroke;
+      ctx.lineWidth = isCurrentWaiting ? 2.5 : 1.5;
+
+      const noteW = 46;
+      const noteH = 26;
+      ctx.beginPath();
+      ctx.roundRect(-noteW / 2, -noteH / 2, noteW, noteH, 13);
+      ctx.fill();
+      ctx.stroke();
+
+      // 内側のハイライトライン
+      if (isCurrentWaiting) {
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(-noteW / 2 + 2, -noteH / 2 + 2, noteW - 4, noteH - 4, 11);
+        ctx.stroke();
+      }
+
+      // ノーツ内の音名テキスト
+      ctx.shadowBlur = 0;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = isCurrentWaiting ? "bold 13px -apple-system, sans-serif" : "bold 11px -apple-system, sans-serif";
+      ctx.fillStyle = isCurrentWaiting ? "#000000" : "#ffffff";
+      ctx.fillText(`${note.note}`, 0, 0);
+
+      ctx.restore();
+    }
+
+    // 4. 衝撃波リングの更新・描画
+    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shockwaves[i];
+      sw.radius += 2.2;
+      sw.alpha -= 0.055;
+
+      if (sw.alpha <= 0) {
+        this.shockwaves.splice(i, 1);
+        continue;
+      }
+
+      ctx.save();
+      ctx.strokeStyle = sw.color;
+      ctx.lineWidth = 2.5 * sw.alpha;
+      ctx.globalAlpha = Math.max(0, sw.alpha);
+      ctx.shadowColor = sw.color;
+      ctx.shadowBlur = 12;
+
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 5. スパーク光粒子の更新・描画
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.94;
+      p.vy *= 0.94;
+      p.alpha -= p.decay;
+
+      if (p.alpha <= 0) {
+        this.particles.splice(i, 1);
+        continue;
+      }
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    requestAnimationFrame(() => this.renderLoop());
+  }
+}
+
+// ノーツガイドコントローラーのインスタンス化と初期化
+notesGuide = new NotesGuideController();
+
 
 
