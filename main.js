@@ -881,8 +881,9 @@ export function updateAndDrawTapEffects(ctx) {
 export function applyFingerThreshold(fingerKey) {
   const model = fingerThresholdModels[fingerKey];
   if (model) {
-    hitRyThreshold = model.hitRy;
-    liftRyThreshold = model.liftRy;
+    // 確実に打鍵できるように、指ごとに快適な閾値（上限キャップ 0.38）を設定
+    hitRyThreshold = Math.min(model.hitRy, 0.38);
+    liftRyThreshold = Math.min(model.liftRy, hitRyThreshold - 0.04);
     trainedHitSamples = model.samples;
   }
   if (thVal) {
@@ -1624,34 +1625,8 @@ function drawRawHandLandmarks(results) {
     smoothedLandmarks = lastSmoothedLandmarks;
   }
 
-  // 1. 対象指以外の骨格（手のひら・他の指すべて）を平滑化座標で薄いグレースケール描画
-  const otherConnections = HAND_CONNECTIONS.filter(
-    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
-  );
-
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-  canvasCtx.lineWidth = 1;
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
-
-  otherConnections.forEach(([startIdx, endIdx]) => {
-    const p1 = smoothedLandmarks[startIdx];
-    const p2 = smoothedLandmarks[endIdx];
-
-    canvasCtx.beginPath();
-    canvasCtx.moveTo(p1.x, p1.y);
-    canvasCtx.lineTo(p2.x, p2.y);
-    canvasCtx.stroke();
-  });
-
-  // 対象指以外の関節点（極小薄グレー）
-  smoothedLandmarks.forEach((pt, idx) => {
-    if (targetIndices.includes(idx)) return;
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "rgba(255, 255, 255, 0.15)";
-    canvasCtx.fill();
-  });
+  // 1. カメラ映像上のトラッキングラインは非表示（骨格線・関節点描画をスキップ）
+  // 打鍵判定に必要なランドマーク平滑化と座標計算のみをバックグラウンドで維持
 
   // 2. 選択中指の平滑化ピクセル座標
   const smoothP1 = smoothedLandmarks[fingerConfig.p1Idx];
@@ -1681,10 +1656,20 @@ function drawRawHandLandmarks(results) {
   const targetColor = getTargetFingerColor(currentSongStep);
 
   // 3. 学習済みCSVモデルによるリアルタイム打鍵認識（空中誤検知を遮断）
-  // カウントダウン中（3・2・1）は打鍵認識を一時停止して演奏準備に専念
-  if (tapState === "IDLE" && !isCountingDown) {
+  if (tapState === "IDLE") {
     // 平滑化変位が学習された打鍵閾値以上になったら打鍵判定
     if (currentRy >= hitRyThreshold) {
+      // カウントダウン中であれば即座にオーバーレイを閉じて演奏開始
+      if (isCountingDown) {
+        const overlay = document.getElementById("countdown-overlay");
+        if (overlay) overlay.classList.add("hidden");
+        if (countdownTimerId) {
+          clearInterval(countdownTimerId);
+          countdownTimerId = null;
+        }
+        isCountingDown = false;
+      }
+
       tapState = "TOUCHED";
 
       // 現在の音符を取得
@@ -1723,9 +1708,6 @@ function drawRawHandLandmarks(results) {
       const toTipX = nextSmoothTip ? nextSmoothTip.x : fromTipX;
       const toTipY = nextSmoothTip ? nextSmoothTip.y : fromTipY;
 
-      // 次の指先へ飛んでいく光のラインエフェクト（彗星ビーム）を生成！
-      spawnBeamEffect(fromTipX, fromTipY, toTipX, toTipY, nextColor);
-
       // 次のターゲット指へ自動切り替えとガイド更新
       setTargetFinger(nextTarget.fingerKey);
       renderSongGuideUI();
@@ -1741,57 +1723,8 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標と相対変位）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy);
 
-  // 5. 指定された指の骨格描画（極太ネオンチューブ＆ホワイトコアのダブルパス描画）
-  canvasCtx.save();
-
-  // パス1: 外側の極太発光ネオンライン（太さ 6.5px、強烈なグロー）
-  canvasCtx.shadowColor = targetColor.glow;
-  canvasCtx.shadowBlur = 24;
-  canvasCtx.strokeStyle = targetColor.stroke;
-  canvasCtx.lineWidth = 6.5;
-  canvasCtx.lineCap = "round";
-  canvasCtx.lineJoin = "round";
-
-  canvasCtx.beginPath();
-  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-  canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  canvasCtx.stroke();
-
-  // パス2: 内側の高輝度ホワイトコアライン（太さ 2.6px：芯が白く発光して立体感・視認性を極大化）
-  canvasCtx.shadowBlur = 0;
-  canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-  canvasCtx.lineWidth = 2.6;
-
-  canvasCtx.beginPath();
-  canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-  canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-  canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-  canvasCtx.lineTo(smoothTip.x, smoothTip.y);
-  canvasCtx.stroke();
-
-  // 対象指関節点（P1, P2, P3）の描画（極太ネオンドット＋白コア）
-  [smoothP1, smoothP2, smoothP3].forEach((pt) => {
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 5.5, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = targetColor.fill;
-    canvasCtx.shadowColor = targetColor.glow;
-    canvasCtx.shadowBlur = 18;
-    canvasCtx.fill();
-
-    canvasCtx.beginPath();
-    canvasCtx.arc(pt.x, pt.y, 2.8, 0, 2 * Math.PI);
-    canvasCtx.fillStyle = "#ffffff";
-    canvasCtx.shadowBlur = 0;
-    canvasCtx.fill();
-  });
-
-  // 6. 対象指先端（TIP）のハイライトターゲット描画（極太二重発光リング＋白熱コア）
-  drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
-  canvasCtx.restore();
-
-  // 7. 演奏時エフェクト（波紋＆光パーティクル）のアニメーション更新・描画
+  // 5. カメラ映像上の指定指トラッキング線・ターゲットマークは非表示化
+  // 6. 演奏時エフェクト（打鍵時の波紋）のみ描画更新
   updateAndDrawTapEffects(canvasCtx);
 }
 
@@ -2014,13 +1947,14 @@ export class NotesGuideController {
     this.targetBadgeEl = document.getElementById("guide-target-badge");
     this.handSvg = document.getElementById("hand-guide-svg");
 
-    // 各指のSVG内定義座標（viewBox="0 0 360 160"基準、1:親指〜5:小指）
+    // 各指の定義座標（viewBox="0 0 1000 280"基準、1:親指〜5:小指）
+    // レーン割合: 14.4%, 32.2%, 50.0%, 67.8%, 85.6%（CSSおよびSVGと完全一致）
     this.fingerDefs = {
-      THUMB:  { fingerNum: 1, note: "ド", label: "親指",   svgX: 52,  svgY: 50 },
-      INDEX:  { fingerNum: 2, note: "レ", label: "人差し指", svgX: 116, svgY: 22 },
-      MIDDLE: { fingerNum: 3, note: "ミ", label: "中指",   svgX: 180, svgY: 14 },
-      RING:   { fingerNum: 4, note: "ファ", label: "薬指",   svgX: 244, svgY: 24 },
-      PINKY:  { fingerNum: 5, note: "ソ", label: "小指",   svgX: 308, svgY: 48 }
+      THUMB:  { fingerNum: 1, note: "ド", label: "親指",   ratioX: 0.144, ratioY: 110 / 280 },
+      INDEX:  { fingerNum: 2, note: "レ", label: "人差し指", ratioX: 0.322, ratioY: 65 / 280 },
+      MIDDLE: { fingerNum: 3, note: "ミ", label: "中指",   ratioX: 0.500, ratioY: 45 / 280 },
+      RING:   { fingerNum: 4, note: "ファ", label: "薬指",   ratioX: 0.678, ratioY: 70 / 280 },
+      PINKY:  { fingerNum: 5, note: "ソ", label: "小指",   ratioX: 0.856, ratioY: 115 / 280 }
     };
 
     // レーンおよび各指先端のCanvas実座標
@@ -2054,13 +1988,36 @@ export class NotesGuideController {
     this.resetNotes();
     this.updateUI();
 
+    // ヘッダー曲名ボタンタップで曲選択メニューを開閉
+    const guideSongBtn = document.getElementById("guide-song-select-trigger");
+    const songMenu = document.getElementById("song-select-menu");
+    if (guideSongBtn && songMenu) {
+      guideSongBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ensureAudioContext();
+        songMenu.classList.toggle("hidden");
+      });
+    }
+
     // 手のイラスト各指のタップ/クリック操作リスナー（画面タップでもテスト演奏可能）
     Object.keys(this.fingerDefs).forEach((key) => {
       const el = document.getElementById(`svg-finger-${key}`);
       if (el) {
         el.addEventListener("pointerdown", (e) => {
           e.stopPropagation();
+          e.preventDefault();
           ensureAudioContext();
+
+          // カウントダウン中であれば即座にオーバーレイを閉じて演奏開始
+          if (isCountingDown) {
+            const overlay = document.getElementById("countdown-overlay");
+            if (overlay) overlay.classList.add("hidden");
+            if (countdownTimerId) {
+              clearInterval(countdownTimerId);
+              countdownTimerId = null;
+            }
+            isCountingDown = false;
+          }
 
           const currentTarget = currentSequence[currentSongStep];
           if (!currentTarget) return;
@@ -2100,18 +2057,15 @@ export class NotesGuideController {
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
 
-    // 手のイラストSVGの配置（CSSで height: 140px, bottom: 6px に設定）
+    // 手のイラストSVGの配置（CSSで height: 140px, bottom: 4px に設定）
     const svgHeight = 140;
-    const svgBottomOffset = 6;
+    const svgBottomOffset = 4;
     const svgTopY = this.height - svgBottomOffset - svgHeight;
 
     Object.keys(this.fingerDefs).forEach((key) => {
       const def = this.fingerDefs[key];
-      const normX = def.svgX / 360;
-      const normY = def.svgY / 160;
-
-      const hitX = this.width * normX;
-      const hitY = svgTopY + normY * svgHeight;
+      const hitX = this.width * def.ratioX;
+      const hitY = svgTopY + def.ratioY * svgHeight;
 
       this.laneCoords[key] = {
         hitX: hitX,
@@ -2457,10 +2411,14 @@ export class NotesGuideController {
       ctx.strokeStyle = note.isHit ? "#ffffff" : noteColor.stroke;
       ctx.lineWidth = isCurrentWaiting ? 2.5 : 1.5;
 
-      const noteW = 46;
+      const noteW = 44;
       const noteH = 26;
       ctx.beginPath();
-      ctx.roundRect(-noteW / 2, -noteH / 2, noteW, noteH, 13);
+      if (typeof ctx.roundRect === "function") {
+        ctx.roundRect(-noteW / 2, -noteH / 2, noteW, noteH, 13);
+      } else {
+        ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      }
       ctx.fill();
       ctx.stroke();
 
@@ -2470,7 +2428,11 @@ export class NotesGuideController {
         ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(-noteW / 2 + 2, -noteH / 2 + 2, noteW - 4, noteH - 4, 11);
+        if (typeof ctx.roundRect === "function") {
+          ctx.roundRect(-noteW / 2 + 2, -noteH / 2 + 2, noteW - 4, noteH - 4, 11);
+        } else {
+          ctx.arc(0, 0, 11, 0, Math.PI * 2);
+        }
         ctx.stroke();
       }
 

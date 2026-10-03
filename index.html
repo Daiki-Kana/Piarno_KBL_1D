@@ -40,12 +40,13 @@
 
       <!-- 右手固定イラスト＆垂直ノーツガイドUI -->
       <div id="notes-guide-container" class="notes-guide-container">
-        <!-- 上部ヘッダー（曲名・ステップ進行・運指ヘルプ） -->
+        <!-- 上部ヘッダー（曲名ボタン・ステップ進行・運指ヘルプ） -->
         <div class="guide-header">
-          <div class="guide-header-left">
+          <button id="guide-song-select-trigger" class="guide-header-left" title="タップして曲を変更" aria-label="曲を変更">
             <span class="guide-icon">♪</span>
             <span id="guide-song-title" class="guide-song-title">彼こそが海賊</span>
-          </div>
+            <span class="guide-arrow">▼</span>
+          </button>
           <div class="guide-header-right">
             <span id="guide-target-badge" class="guide-target-badge">2 レ (人差し指)</span>
             <span id="guide-step-progress" class="guide-step-progress">1 / 16</span>
@@ -54,7 +55,7 @@
 
         <!-- ガイドライン・ノーツ・手イラストの描画メインステージ -->
         <div class="guide-stage">
-          <!-- 背景垂直レーン（CSS） -->
+          <!-- 背景垂直レーン（CSS）: レーン位置 14.4%, 32.2%, 50.0%, 67.8%, 85.6% -->
           <div class="guide-lanes-bg">
             <div class="guide-lane-line" style="left: 14.4%;"></div>
             <div class="guide-lane-line" style="left: 32.2%;"></div>
@@ -64,48 +65,48 @@
           </div>
 
           <!-- 手の固定イラスト（SVG: 右手甲側視点 1:親指〜5:小指） -->
-          <svg id="hand-guide-svg" class="hand-guide-svg" viewBox="0 0 360 160" preserveAspectRatio="xMidYMid meet">
+          <svg id="hand-guide-svg" class="hand-guide-svg" viewBox="0 0 1000 280" preserveAspectRatio="none">
             <!-- 手の甲・ひらベースシェル -->
-            <path class="hand-palm" d="M 125,160 C 100,150 72,130 66,108 C 60,94 72,88 82,94 C 92,100 102,96 114,92 L 246,92 C 258,96 272,100 294,102 C 314,104 322,120 316,134 C 308,150 258,160 235,160 Z" />
+            <path class="hand-palm" d="M 280,280 C 180,260 80,230 60,180 C 40,140 80,120 120,150 L 144,170 L 322,170 L 500,170 L 678,170 L 856,190 C 920,200 960,240 920,270 C 880,280 650,280 500,280 Z" />
             
-            <!-- 親指 (THUMB: 1 ド) -->
+            <!-- 親指 (THUMB: 1 ド, レーン 14.4%) -->
             <g id="svg-finger-THUMB" class="hand-finger" data-key="THUMB">
-              <path class="finger-body" d="M 68,94 L 42,55 C 36,45 48,36 57,42 L 84,78 Z" />
-              <circle class="finger-tip-ring" cx="52" cy="50" r="16" />
-              <text class="finger-num-text" x="52" y="47">1</text>
-              <text class="finger-note-text" x="52" y="58">ド</text>
+              <path class="finger-body" d="M 180,210 L 115,140 C 95,120 120,80 144,110 L 220,180 Z" />
+              <circle class="finger-tip-ring" cx="144" cy="110" r="38" />
+              <text class="finger-num-text" x="144" y="103">1</text>
+              <text class="finger-note-text" x="144" y="125">ド</text>
             </g>
 
-            <!-- 人差し指 (INDEX: 2 レ) -->
+            <!-- 人差し指 (INDEX: 2 レ, レーン 32.2%) -->
             <g id="svg-finger-INDEX" class="hand-finger" data-key="INDEX">
-              <rect class="finger-body" x="103" y="22" width="26" height="72" rx="13" />
-              <circle class="finger-tip-ring" cx="116" cy="22" r="16" />
-              <text class="finger-num-text" x="116" y="19">2</text>
-              <text class="finger-note-text" x="116" y="30">レ</text>
+              <rect class="finger-body" x="290" y="65" width="64" height="150" rx="32" />
+              <circle class="finger-tip-ring" cx="322" cy="65" r="38" />
+              <text class="finger-num-text" x="322" y="58">2</text>
+              <text class="finger-note-text" x="322" y="80">レ</text>
             </g>
 
-            <!-- 中指 (MIDDLE: 3 ミ) -->
+            <!-- 中指 (MIDDLE: 3 ミ, レーン 50.0%) -->
             <g id="svg-finger-MIDDLE" class="hand-finger" data-key="MIDDLE">
-              <rect class="finger-body" x="167" y="14" width="26" height="80" rx="13" />
-              <circle class="finger-tip-ring" cx="180" cy="14" r="16" />
-              <text class="finger-num-text" x="180" y="11">3</text>
-              <text class="finger-note-text" x="180" y="22">ミ</text>
+              <rect class="finger-body" x="468" y="45" width="64" height="170" rx="32" />
+              <circle class="finger-tip-ring" cx="500" cy="45" r="38" />
+              <text class="finger-num-text" x="500" y="38">3</text>
+              <text class="finger-note-text" x="500" y="60">ミ</text>
             </g>
 
-            <!-- 薬指 (RING: 4 ファ) -->
+            <!-- 薬指 (RING: 4 ファ, レーン 67.8%) -->
             <g id="svg-finger-RING" class="hand-finger" data-key="RING">
-              <rect class="finger-body" x="231" y="24" width="26" height="70" rx="13" />
-              <circle class="finger-tip-ring" cx="244" cy="24" r="16" />
-              <text class="finger-num-text" x="244" y="21">4</text>
-              <text class="finger-note-text" x="244" y="32">ファ</text>
+              <rect class="finger-body" x="646" y="70" width="64" height="145" rx="32" />
+              <circle class="finger-tip-ring" cx="678" cy="70" r="38" />
+              <text class="finger-num-text" x="678" y="63">4</text>
+              <text class="finger-note-text" x="678" y="85">ファ</text>
             </g>
 
-            <!-- 小指 (PINKY: 5 ソ) -->
+            <!-- 小指 (PINKY: 5 ソ, レーン 85.6%) -->
             <g id="svg-finger-PINKY" class="hand-finger" data-key="PINKY">
-              <rect class="finger-body" x="296" y="48" width="24" height="56" rx="12" />
-              <circle class="finger-tip-ring" cx="308" cy="48" r="16" />
-              <text class="finger-num-text" x="308" y="45">5</text>
-              <text class="finger-note-text" x="308" y="56">ソ</text>
+              <rect class="finger-body" x="826" y="115" width="60" height="110" rx="30" />
+              <circle class="finger-tip-ring" cx="856" cy="115" r="38" />
+              <text class="finger-num-text" x="856" y="108">5</text>
+              <text class="finger-note-text" x="856" y="130">ソ</text>
             </g>
           </svg>
 
