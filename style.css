@@ -882,12 +882,19 @@ html, body {
 }
 
 .start-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #888888;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
   letter-spacing: 1px;
-  margin-bottom: 14px;
-  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.start-desc {
+  font-size: 11px;
+  color: #aaaaaa;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  letter-spacing: 0.3px;
 }
 
 .start-song-list {

@@ -56,7 +56,7 @@
         </svg>
       </div>
 
-      <!-- 画面右上コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン） -->
+      <!-- 画面右上コントロール群（トラッキングライン切替ボタン） -->
       <div class="top-right-controls">
         <!-- トラッキングライン表示切替ボタン -->
         <button id="tracking-line-toggle-btn" class="ctrl-circle-btn tracking-line-btn" aria-label="トラッキングライン表示切替" title="トラッキングライン表示切替" aria-pressed="true">
@@ -69,30 +69,6 @@
             <line x1="3" y1="21" x2="21" y2="3" class="slash-line" />
           </svg>
         </button>
-
-        <!-- 楽曲選択丸ボタン＆ポップアップメニュー -->
-        <div class="song-select-container">
-          <button id="song-select-btn" class="ctrl-circle-btn song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
-          <div id="song-select-menu" class="song-select-menu hidden">
-            <div class="song-menu-header">曲を選択</div>
-            <button class="song-menu-item active" data-song="ode_to_joy">よろこびのうた</button>
-            <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんのひつじ</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- カウントダウンオーバーレイ（3・2・1・START!） -->
-      <div id="countdown-overlay" class="countdown-overlay hidden">
-        <div id="countdown-text" class="countdown-text">3</div>
-      </div>
-
-      <!-- 画面上部：演奏進捗テキストバッジ（白黒ミニマル） -->
-      <div id="song-progress-badge" class="song-progress-badge">1 / 62</div>
-
-      <!-- 完走時クリア通知オーバーレイ（COMPLETE） -->
-      <div id="clear-overlay" class="clear-overlay hidden">
-        <div class="clear-title">COMPLETE</div>
-        <div class="clear-subtitle">100% CLEAR</div>
       </div>
 
       <!-- カメラエラー・ガイダンス通知オーバーレイ（白黒ミニマル） -->
@@ -109,18 +85,13 @@
           </div>
         </div>
       </div>
-      <!-- 起動時：楽曲選択＆スタートモーダル（シンプル・白黒ミニマル） -->
+      <!-- 起動時：自由演奏スタートモーダル（シンプル・白黒ミニマル） -->
       <div id="start-modal" class="start-modal">
         <div class="start-card">
-          <div class="start-title">曲を選択</div>
-          <div class="start-song-list">
-            <button class="start-song-item selected" data-song="ode_to_joy">
-              <span class="start-song-name">よろこびのうた</span>
-            </button>
-            <button class="start-song-item" data-song="mary_had_a_little_lamb">
-              <span class="start-song-name">メリーさんのひつじ</span>
-            </button>
-          </div>
+          <div class="start-title">自由演奏（右手）</div>
+          <p class="start-desc">
+            親指: ド / 人差し指: レ / 中指: ミ / 薬指: ファ / 小指: ソ
+          </p>
           <button id="start-play-btn" class="start-play-btn">
             <span id="start-play-text">スタート</span>
           </button>
@@ -182,11 +153,11 @@
         </div>
         <div class="debug-divider"></div>
         <div class="debug-row">
-          <span class="debug-label">TARGET:</span>
-          <span id="target-finger-val" class="debug-val">右手 3 ミ (中指)</span>
+          <span class="debug-label">LAST HIT:</span>
+          <span id="target-finger-val" class="debug-val">-</span>
           <span class="debug-separator">/</span>
-          <span class="debug-label">STEP:</span>
-          <span id="target-tap-progress" class="debug-val">1 / 62</span>
+          <span class="debug-label">MODE:</span>
+          <span id="target-tap-progress" class="debug-val">自由演奏</span>
         </div>
         <div class="debug-row">
           <span class="debug-label">TIP X:</span>
