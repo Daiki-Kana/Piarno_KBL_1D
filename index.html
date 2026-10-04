@@ -58,8 +58,8 @@
 
       <!-- 画面右上コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン） -->
       <div class="top-right-controls">
-        <!-- トラッキングライン表示切替ボタン -->
-        <button id="tracking-line-toggle-btn" class="ctrl-circle-btn tracking-line-btn" aria-label="トラッキングライン表示切替" title="トラッキングライン表示切替" aria-pressed="true">
+        <!-- トラッキングライン表示切替ボタン（デフォルト非表示・タップで切替可能） -->
+        <button id="tracking-line-toggle-btn" class="ctrl-circle-btn tracking-line-btn off" aria-label="トラッキングライン表示切替" title="トラッキングライン表示に切替" aria-pressed="false">
           <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
             <path class="icon-line" d="M 4,19 L 10,13 L 14,16 L 20,5" />
             <circle cx="4" cy="19" r="2" class="icon-dot" />
@@ -76,7 +76,7 @@
           <div id="song-select-menu" class="song-select-menu hidden">
             <div class="song-menu-header">曲を選択</div>
             <button class="song-menu-item active" data-song="ode_to_joy">よろこびのうた</button>
-            <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんのひつじ</button>
+            <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんの羊</button>
           </div>
         </div>
       </div>
@@ -118,7 +118,7 @@
               <span class="start-song-name">よろこびのうた</span>
             </button>
             <button class="start-song-item" data-song="mary_had_a_little_lamb">
-              <span class="start-song-name">メリーさんのひつじ</span>
+              <span class="start-song-name">メリーさんの羊</span>
             </button>
           </div>
           <button id="start-play-btn" class="start-play-btn">

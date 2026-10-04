@@ -67,9 +67,9 @@ function checkDebugPanelVisibility() {
 checkDebugPanelVisibility();
 window.addEventListener("resize", checkDebugPanelVisibility);
 
-// トラッキングライン（骨格線・指先マーカー）の表示フラグ（localStorageで状態保存）
+// トラッキングライン（骨格線・指先マーカー）の表示フラグ（デフォルト非表示・localStorageで状態保存）
 export const TRACKING_LINES_STORAGE_KEY = "piarno_show_tracking_lines";
-export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) !== "false";
+export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) === "true";
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -682,7 +682,12 @@ export const SONGS = {
   },
   mary_had_a_little_lamb: {
     id: "mary_had_a_little_lamb",
-    title: "メリーさんのひつじ",
+    title: "メリーさんの羊",
+    sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE
+  },
+  mary: {
+    id: "mary_had_a_little_lamb",
+    title: "メリーさんの羊",
     sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE
   }
 };
@@ -791,7 +796,9 @@ export function showClearNotification(onComplete) {
  * @param {boolean} withCountdown カウントダウンを開始するかどうか（起動時は手動制御）
  */
 export function selectSong(songId, withCountdown = true) {
-  if (!SONGS[songId]) return;
+  const targetSong = SONGS[songId];
+  if (!targetSong) return;
+  const canonicalId = targetSong.id;
 
   // クリア演出中であればタイマーとオーバーレイをリセット
   if (clearTimerId) {
@@ -805,8 +812,8 @@ export function selectSong(songId, withCountdown = true) {
     clearOverlay.classList.add("hidden");
   }
 
-  currentSongId = songId;
-  currentSequence = SONGS[songId].sequence;
+  currentSongId = canonicalId;
+  currentSequence = targetSong.sequence;
   currentSongStep = 0;
   if (typeof noteProgressMap !== "undefined") {
     noteProgressMap.clear();
@@ -814,12 +821,12 @@ export function selectSong(songId, withCountdown = true) {
 
   // 右上ポップアップメニューのアクティブクラス更新
   document.querySelectorAll(".song-menu-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.song === songId);
+    btn.classList.toggle("active", btn.dataset.song === canonicalId);
   });
 
   // 起動モーダルの選択状態も同期
   document.querySelectorAll(".start-song-item").forEach((btn) => {
-    const isSelected = btn.dataset.song === songId;
+    const isSelected = btn.dataset.song === canonicalId;
     btn.classList.toggle("selected", isSelected);
     const check = btn.querySelector(".start-song-check");
     if (check) check.textContent = isSelected ? "●" : "○";
