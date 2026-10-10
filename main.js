@@ -170,9 +170,9 @@ function initPianoSampler() {
 // サンプラーの初期化を実行
 initPianoSampler();
 
-// 学習済みCSVから自動導出される閾値モデル（デフォルト値付き）
-let hitRyThreshold = 0.70;
-let liftRyThreshold = 0.45;
+// 学習済みCSVから自動導出される閾値モデル（デフォルト値付き：軽い自然な打鍵で反応する適正初期値）
+let hitRyThreshold = 0.35;
+let liftRyThreshold = 0.25;
 let trainedHitSamples = 0;
 
 // 打鍵ステートマシン管理（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
@@ -930,24 +930,24 @@ export function updateCachedConnections(fingerKey) {
   currentOtherConnections = connections;
 }
 
-// 指ごとの推奨平滑化下降速度閾値（ピクセル/秒）
-// 打鍵時は急峻な下降（300〜1600 px/s）が発生し、静止待機時（0〜8 px/s）を完全に遮断
+// 指ごとの推奨平滑化下降速度閾値（基準解像度 720p 換算、単位: px/秒）
+// 机面静止待機時（0〜8 px/s）を確実に遮断しつつ、通常の軽やかな打鍵（25〜80 px/s）で自然に発火する高感度最適値
 export const FINGER_VY_THRESHOLDS = {
-  THUMB: 160,
-  INDEX: 220,
-  MIDDLE: 220,
-  RING: 180,
-  PINKY: 180
+  THUMB: 25,
+  INDEX: 35,
+  MIDDLE: 35,
+  RING: 30,
+  PINKY: 30
 };
 
 // 指ごとの学習閾値モデル
-// 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
+// 速度ゲートを併用するため、浅い自然な打鍵変位（0.24〜0.36）でも確実に検知する高感度初期値
 export const fingerThresholdModels = {
-  THUMB: { hitRy: 0.35, liftRy: 0.28, samples: 0 },
-  MIDDLE: { hitRy: 0.60, liftRy: 0.52, samples: 0 },
-  RING: { hitRy: 0.55, liftRy: 0.48, samples: 0 },
-  PINKY: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
-  INDEX: { hitRy: 0.60, liftRy: 0.52, samples: 0 }
+  THUMB: { hitRy: 0.24, liftRy: 0.18, samples: 0 },
+  MIDDLE: { hitRy: 0.36, liftRy: 0.28, samples: 0 },
+  RING: { hitRy: 0.36, liftRy: 0.28, samples: 0 },
+  PINKY: { hitRy: 0.30, liftRy: 0.23, samples: 0 },
+  INDEX: { hitRy: 0.34, liftRy: 0.26, samples: 0 }
 };
 
 // 指ごとのデータセット格納用
@@ -1282,15 +1282,17 @@ function updateAndRenderNotes() {
       const pulse = isLead ? 1.0 + 0.08 * Math.sin(now * 0.007) : 1.0;
       const alpha = Math.min(1.0, curProg * 1.5);
 
-      // ノーツの描画（ネオン発光カプセル）
+      // ノーツの描画（ネオン発光カプセル、iPad大画面時は適応スケール）
       notesCtx.save();
       notesCtx.translate(curX, curY);
       notesCtx.scale(pulse, pulse);
       notesCtx.globalAlpha = alpha;
 
-      const capsuleW = 54;
-      const capsuleH = 28;
-      const radius = 14;
+      const isTablet = isTabletOrSquareScreen();
+      const noteScale = isTablet ? 1.22 : 1.0;
+      const capsuleW = 54 * noteScale;
+      const capsuleH = 28 * noteScale;
+      const radius = 14 * noteScale;
 
       // 外側ネオングロー
       notesCtx.beginPath();
@@ -1311,7 +1313,7 @@ function updateAndRenderNotes() {
 
       // カプセル内テキスト（運指番号＋音名、例: "3 ミ"）
       notesCtx.fillStyle = "#ffffff";
-      notesCtx.font = "bold 13px 'Inter', sans-serif";
+      notesCtx.font = `bold ${Math.round(13 * noteScale)}px 'Inter', sans-serif`;
       notesCtx.textAlign = "center";
       notesCtx.textBaseline = "middle";
       notesCtx.fillText(`${item.fingerNum} ${item.note}`, 0, 1);
@@ -1575,18 +1577,17 @@ function trainModelForFinger(fingerKey) {
 
     if (medianHitRy > maxAirRy) {
       // 空中最大と打鍵中央値の中間点に打鍵閾値を設定
-      // 薬指（RING）は他指（中指・小指）との連動によるつられ下がり誤検知を防ぐため、やや高め（0.46）に設定
-      // 親指（THUMB）は机面への垂直変位が小さいため緩和（0.30）して反応感度を向上
-      const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.46 : 0.45);
+      // 速度ゲートが併用されるため、浅い自然な打鍵でも素早く反応するよう比率を調整
+      const hitRatio = fingerKey === "THUMB" ? 0.22 : (fingerKey === "RING" ? 0.35 : 0.32);
       hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
 
-      // 速度ゲートにより机面待機誤爆が防止されているため、浅い打鍵でも確実に反応するよう適正範囲内にクランプ
-      const minHitTh = fingerKey === "THUMB" ? 0.30 : (fingerKey === "PINKY" ? 0.45 : 0.50);
-      hitTh = Math.max(hitTh, minHitTh);
+      // iPad等の斜め見下ろしアングルでも軽く机を叩くだけで確実に届くよう適正範囲内にクランプ
+      const minHitTh = fingerKey === "THUMB" ? 0.20 : (fingerKey === "PINKY" ? 0.26 : 0.30);
+      const maxHitTh = fingerKey === "THUMB" ? 0.28 : (fingerKey === "PINKY" ? 0.35 : 0.40);
+      hitTh = Math.min(Math.max(hitTh, minHitTh), maxHitTh);
 
-      // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
-      // ヒステリシス幅を極小（0.03）に設定
-      const hysteresis = 0.03;
+      // リフト閾値：打鍵位置からわずかに指の力を抜くだけで素早くIDLE復帰できるようヒステリシスを設定
+      const hysteresis = fingerKey === "THUMB" ? 0.05 : 0.07;
       liftTh = hitTh - hysteresis;
     } else {
       // 外れ値等で打鍵中央値が空中を下回る場合の適応フォールバック
@@ -1594,8 +1595,8 @@ function trainModelForFinger(fingerKey) {
       liftTh = hitTh - 0.03;
     }
   } else {
-    // 打鍵サンプルが0件の場合の安全マージン（親指は垂直変位が小さいため0.10、薬指は誤検知防止で0.20、他指は0.18）
-    const safetyMargin = fingerKey === "THUMB" ? 0.10 : (fingerKey === "RING" ? 0.20 : 0.18);
+    // 打鍵サンプルが0件の場合の安全マージン（親指は0.08、薬指は0.15、他指は0.12）
+    const safetyMargin = fingerKey === "THUMB" ? 0.08 : (fingerKey === "RING" ? 0.15 : 0.12);
     hitTh = maxAirRy + safetyMargin;
     liftTh = hitTh - 0.03;
   }
@@ -2490,6 +2491,9 @@ function selectRightHandLandmarks(results) {
   return leftmostHand;
 }
 
+// 直近フレームの下降速度履歴（打鍵の過渡的な振り下ろし勢いを確実に捕捉）
+let recentVyHistory = [0, 0, 0];
+
 /**
  * 手の全21ランドマークの適応平滑化描画、打鍵・リフト用特徴量の算出
  * 手首・手のひら・全指先を独立した 1 Euro Filter で常時平滑化し、ジッターと飛びを完全排除
@@ -2611,14 +2615,31 @@ function drawRawHandLandmarks(results) {
   // 対象指先端の平滑化下降速度（ピクセル/秒）を取得（下向き > 0、上向き < 0）
   const tipFilter = landmarkFilters[fingerConfig.tipIdx];
   const tipVy = tipFilter ? tipFilter.getVelocityY() : 0;
-  const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 200;
 
-  // 3. レベル2打鍵認識（変位 ＋ 平滑化下降速度ゲートにより机面静止待機誤爆を完全遮断）
+  // 直近フレームの下降速度履歴（打鍵の過渡的な振り下ろし勢いを確実に捕捉：約130ms分を保持）
+  recentVyHistory.push(tipVy);
+  if (recentVyHistory.length > 8) recentVyHistory.shift();
+  const recentPeakVy = Math.max(...recentVyHistory);
+
+  // カメラ解像度（iPadの480pやPCの720p/1080p）による速度縮尺差を吸収する正規化スケール係数（基準高: 720px）
+  // iPad (480p) では約 0.67 倍に自動補正され、PCと同等の軽い自然なタッチで確実に発火
+  const resolutionScale = Math.max(0.5, Math.min(1.5, height / 720));
+  const baseHitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 35;
+  const hitVyThreshold = baseHitVyThreshold * resolutionScale;
+
+  // 3. レベル2打鍵認識（変位 ＋ 下降速度ゲートにより机面静止待機誤爆を遮断しつつ高感度判定）
   // カウントダウン中（3・2・1）、完走クリア演出中、および画面外復帰初フレームは打鍵認識を安全にスキップ
   if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired) {
-    // 平滑化変位が打鍵閾値以上 かつ 下降速度が速度閾値以上（勢いよく振り下ろされた瞬間）
-    if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
+    // 下降インパルスの判定：
+    // A: 瞬時または直近ピーク速度が閾値以上（通常の振り下ろし打鍵）
+    // B: または指が十分に机面に沈み込み、わずかでも下向きに押されている場合（ゆっくりした押し込み打鍵の救済）
+    const hasFastTap = Math.max(tipVy, recentPeakVy) >= hitVyThreshold;
+    const hasPressDown = currentRy >= (hitRyThreshold * 1.15) && tipVy >= (5 * resolutionScale);
+    const hasDownwardImpulse = hasFastTap || hasPressDown;
+
+    if (currentRy >= hitRyThreshold && hasDownwardImpulse) {
       tapState = "TOUCHED";
+      recentVyHistory = [0, 0, 0]; // 発火時に速度履歴をリセットして二重発火を防止
 
       // 該当指先でノーツHIT弾けエフェクトを発火
       triggerNoteHitEffect(currentSongStep);
@@ -2651,7 +2672,7 @@ function drawRawHandLandmarks(results) {
       updateStateHud("TOUCHED", true);
 
       console.log(
-        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, vy=${tipVy.toFixed(0)} >= V_TH:${hitVyThreshold}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
+        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, vy=${tipVy.toFixed(0)} >= V_TH:${hitVyThreshold.toFixed(0)}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
       );
 
       const isLastStep = currentSongStep === currentSequence.length - 1;
@@ -2678,13 +2699,15 @@ function drawRawHandLandmarks(results) {
       }
     }
   } else if (tapState === "TOUCHED") {
-    // 指のリフト復帰：
+    // 指のリフト復帰（軽快な連打・トリル対応）:
     // 1. 変位がリフト閾値を下回った場合（通常の位置復帰）
-    // 2. または、指先が上向きにリバウンド反転（tipVy <= -100 px/s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
+    // 2. 指先が上向きに反転（速度負）し、かつ打鍵深さからわずかに抜けた場合（早期リフト復帰）
+    // 3. または変位が打鍵閾値からわずかに抜けた場合（微小リフトによる即時復帰）
     const isLiftByPosition = currentRy <= liftRyThreshold;
-    const isLiftByRebound = tipVy <= -100 && currentRy <= (hitRyThreshold - 0.02);
+    const isLiftByRebound = tipVy <= (-15 * resolutionScale) && currentRy <= (hitRyThreshold - 0.015);
+    const isLiftBySlightRelease = currentRy <= (hitRyThreshold - 0.03);
 
-    if (isLiftByPosition || isLiftByRebound) {
+    if (isLiftByPosition || isLiftByRebound || isLiftBySlightRelease) {
       tapState = "IDLE";
       updateStateHud("IDLE", false);
     }
@@ -3211,7 +3234,9 @@ if (handGuideWidget) {
   handGuideWidget.style.top = "";
   handGuideWidget.style.right = "";
   handGuideWidget.style.bottom = "";
-  handGuideWidget.style.setProperty("--hand-guide-size", "200px");
+  // iPadやタブレットでは大画面で視認しやすいよう240px、その他は200pxを初期設定
+  const isTablet = isTabletOrSquareScreen();
+  handGuideWidget.style.setProperty("--hand-guide-size", isTablet ? "240px" : "200px");
 }
 
 // 初回オーディオ開始バナーのクリックイベント

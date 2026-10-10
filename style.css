@@ -979,4 +979,65 @@ html, body {
   word-break: break-word;
 }
 
+/* ==========================================================================
+   iPad・タブレット画面向けレスポンシブスタイル最適化
+   4:3〜16:10 アスペクト比や、幅768px以上の大画面タッチ環境に最適化
+   ========================================================================== */
+@media (min-width: 768px) {
+  /* 運指ガイドウィジェット：大画面で見やすい実物大スケール */
+  .hand-guide-widget {
+    --hand-guide-size: clamp(210px, 25vw, 260px);
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(0px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* コントロールボタン群（右上）：机上タップしやすい適正サイズ */
+  .ctrl-circle-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ctrl-circle-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .song-select-btn {
+    font-size: 18px;
+  }
+
+  /* 画面上部進捗バッジ：視認性向上 */
+  .song-progress-badge {
+    top: calc(20px + env(safe-area-inset-top, 0px));
+    font-size: 15px;
+    padding: 6px 18px;
+    letter-spacing: 2px;
+  }
+
+  /* スタートモーダル：iPad大画面で快適に操作可能なレイアウト */
+  .start-card {
+    max-width: 460px;
+    padding: 36px 32px;
+  }
+
+  .start-title {
+    font-size: 22px;
+  }
+
+  .start-song-name {
+    font-size: 16px;
+  }
+
+  .start-play-btn {
+    padding: 15px 20px;
+    font-size: 16px;
+  }
+
+  .start-hint {
+    font-size: 11px;
+    margin-top: 16px;
+  }
+}
+
+
 
