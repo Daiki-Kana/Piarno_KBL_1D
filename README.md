@@ -10,16 +10,3 @@ Piarno_KBL_1D/
 │   │   ├── manifest.json   # 読み込み対象CSVの定義ファイル
 │   │   └── *.csv           # 各指の時系列フレーム座標・打鍵ラベルデータ
 │   └── models/             # MediaPipe HandLandmarker モデルアセット
-
-```
-### 必要環境
-
->依存関係のインストール
-```bash
-npm install
-```
->開発サーバーの起動
-```bash
-npm run dev
-```
-詳細は [Markdownファイル](Recipe_of_Piarno.md) にまとめてあります。
