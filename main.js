@@ -3584,9 +3584,246 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// ページ復元イベント（bfcache復元時等）
-window.addEventListener("pageshow", () => {
-  handleResumeAudioAndWakeLock();
+// ==========================================================================
+// デモ動画ファイル読み込み ＆ 鍵盤合成制御（プレゼン動画作成用）
+// ==========================================================================
+const videoLoadBtn = document.getElementById("video-load-btn");
+const videoFileInput = document.getElementById("video-file-input");
+const mirrorToggleBtn = document.getElementById("mirror-toggle-btn");
+const videoControlBar = document.getElementById("video-control-bar");
+const videoPlayPauseBtn = document.getElementById("video-play-pause-btn");
+const videoSeekSlider = document.getElementById("video-seek-slider");
+const videoTimeDisplay = document.getElementById("video-time-display");
+const videoRestartBtn = document.getElementById("video-restart-btn");
+const videoCameraReturnBtn = document.getElementById("video-camera-return-btn");
+const dropOverlay = document.getElementById("drop-overlay");
+
+// 現在動画ファイル再生モードかどうか
+let isVideoFileMode = false;
+let currentVideoObjectUrl = null;
+let isVideoMirrored = true;
+
+/**
+ * 秒数を "m:ss" 形式にフォーマット
+ * @param {number} sec
+ */
+function formatVideoTime(sec) {
+  if (isNaN(sec) || !isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/**
+ * デモ動画ファイルを読み込んで再生し、鍵盤・ノーツと同期
+ * @param {File} file
+ */
+export async function loadDemoVideoFile(file) {
+  if (!file) return;
+
+  console.log(`[VIDEO FILE] 動画ファイルを読み込み開始: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+  ensureAudioContext();
+
+  // 1. 既存のカメラストリームがあれば停止
+  if (currentStream) {
+    try {
+      currentStream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+      console.warn("[VIDEO FILE] カメラ停止エラー:", err);
+    }
+    currentStream = null;
+  }
+
+  // 2. 過去のObjectURLがあれば解放
+  if (currentVideoObjectUrl) {
+    URL.revokeObjectURL(currentVideoObjectUrl);
+    currentVideoObjectUrl = null;
+  }
+
+  // 3. 動画ファイルをObject URLとしてセット
+  currentVideoObjectUrl = URL.createObjectURL(file);
+  video.srcObject = null;
+  video.src = currentVideoObjectUrl;
+  video.muted = true; // 動画の元音声による二重発音を防ぎ、アプリのピアノ音を綺麗に重ねる
+  video.loop = false;
+  video.playsInline = true;
+
+  isVideoFileMode = true;
+
+  // 4. 楽曲進行を第1音にリセット
+  currentSongStep = 0;
+  if (currentSequence && currentSequence.length > 0) {
+    setTargetFinger(currentSequence[0].fingerKey);
+  }
+  renderSongGuideUI();
+  resetAccompaniment();
+  releaseAllNotes();
+  noteProgressMap.clear();
+
+  // 5. 動画メタデータ読み込み完了時にアスペクト比同期と再生開始
+  video.onloadedmetadata = async () => {
+    updateCanvasResolution();
+    try {
+      await video.play();
+      console.log(`[VIDEO FILE] 動画再生開始: ${video.videoWidth}x${video.videoHeight}, 長さ: ${video.duration.toFixed(1)}s`);
+      if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
+      if (videoControlBar) videoControlBar.classList.remove("hidden");
+    } catch (err) {
+      console.warn("[VIDEO FILE] 動画自動再生エラー（ユーザー操作待ち）:", err);
+      if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "▶";
+    }
+
+    // 推論ループを確実に稼働
+    if (!isPredicting) {
+      isPredicting = true;
+      schedulePredictLoop();
+    }
+  };
+
+  // 6. タイムライン更新
+  video.ontimeupdate = () => {
+    if (!video.duration) return;
+    const progress = (video.currentTime / video.duration) * 100;
+    if (videoSeekSlider) videoSeekSlider.value = progress;
+    if (videoTimeDisplay) {
+      videoTimeDisplay.textContent = `${formatVideoTime(video.currentTime)} / ${formatVideoTime(video.duration)}`;
+    }
+  };
+
+  // 7. 動画終了時の自動ループ＆楽曲リセット
+  video.onended = () => {
+    console.log("[VIDEO FILE] 動画終了。先頭からループ再生します");
+    restartVideoPlayback();
+  };
+}
+
+/**
+ * 動画再生を最初からリスタート（演奏進行もリセット）
+ */
+function restartVideoPlayback() {
+  if (!video || !isVideoFileMode) return;
+  video.currentTime = 0;
+  currentSongStep = 0;
+  if (currentSequence && currentSequence.length > 0) {
+    setTargetFinger(currentSequence[0].fingerKey);
+  }
+  renderSongGuideUI();
+  resetAccompaniment();
+  releaseAllNotes();
+  noteProgressMap.clear();
+
+  video.play().catch(() => {});
+  if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
+}
+
+// 動画読み込みボタン
+if (videoLoadBtn && videoFileInput) {
+  videoLoadBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    ensureAudioContext();
+    videoFileInput.click();
+  });
+
+  videoFileInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      loadDemoVideoFile(file);
+    }
+    videoFileInput.value = ""; // 次回同一ファイル選択時もchange発火
+  });
+}
+
+// 映像ミラー反転トグルボタン
+if (mirrorToggleBtn) {
+  mirrorToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    isVideoMirrored = !isVideoMirrored;
+    video.classList.toggle("no-mirror", !isVideoMirrored);
+    canvas.classList.toggle("no-mirror", !isVideoMirrored);
+    mirrorToggleBtn.classList.toggle("off", !isVideoMirrored);
+    console.log(`[MIRROR] ミラー反転切り替え: ${isVideoMirrored ? "鏡像（反転）" : "通常（非反転）"}`);
+  });
+}
+
+// 再生/一時停止ボタン
+if (videoPlayPauseBtn) {
+  videoPlayPauseBtn.addEventListener("click", () => {
+    if (!isVideoFileMode || !video) return;
+    if (video.paused) {
+      video.play().catch(() => {});
+      videoPlayPauseBtn.textContent = "❚❚";
+    } else {
+      video.pause();
+      videoPlayPauseBtn.textContent = "▶";
+    }
+  });
+}
+
+// シークスライダー
+if (videoSeekSlider) {
+  videoSeekSlider.addEventListener("input", () => {
+    if (!isVideoFileMode || !video || !video.duration) return;
+    const seekTime = (parseFloat(videoSeekSlider.value) / 100) * video.duration;
+    video.currentTime = seekTime;
+  });
+}
+
+// 最初から再生ボタン
+if (videoRestartBtn) {
+  videoRestartBtn.addEventListener("click", () => {
+    restartVideoPlayback();
+  });
+}
+
+// カメラ復帰ボタン
+if (videoCameraReturnBtn) {
+  videoCameraReturnBtn.addEventListener("click", async () => {
+    if (!isVideoFileMode) return;
+    console.log("[VIDEO FILE] 動画再生モードを終了し、カメラ映像へ復帰します");
+    video.pause();
+    if (currentVideoObjectUrl) {
+      URL.revokeObjectURL(currentVideoObjectUrl);
+      currentVideoObjectUrl = null;
+    }
+    video.src = "";
+    video.srcObject = null;
+    isVideoFileMode = false;
+    if (videoControlBar) videoControlBar.classList.add("hidden");
+
+    // 楽曲リセット
+    currentSongStep = 0;
+    if (currentSequence && currentSequence.length > 0) {
+      setTargetFinger(currentSequence[0].fingerKey);
+    }
+    renderSongGuideUI();
+    resetAccompaniment();
+    releaseAllNotes();
+    noteProgressMap.clear();
+
+    // カメラ再起動
+    await startFrontCamera();
+  });
+}
+
+// ドラッグ＆ドロップによるデモ動画読み込み受付
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (dropOverlay) dropOverlay.classList.remove("hidden");
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget && dropOverlay) {
+    dropOverlay.classList.add("hidden");
+  }
+});
+
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  if (dropOverlay) dropOverlay.classList.add("hidden");
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file && file.type.startsWith("video/")) {
+    loadDemoVideoFile(file);
+  }
 });
 
 

@@ -70,6 +70,24 @@
           </svg>
         </button>
 
+        <!-- デモ動画ファイル読み込みボタン（動画合成用） -->
+        <button id="video-load-btn" class="ctrl-circle-btn video-load-btn" aria-label="デモ動画を読み込み" title="デモ動画ファイルを読み込んで鍵盤合成">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <path d="M 4,5 L 16,5 C 17.1,5 18,5.9 18,7 L 18,17 C 18,18.1 17.1,19 16,19 L 4,19 C 2.9,19 2,18.1 2,17 L 2,7 C 2,5.9 2.9,5 4,5 Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <polygon points="18,9.5 22,6.5 22,17.5 18,14.5" fill="currentColor"/>
+          </svg>
+        </button>
+        <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/quicktime,video/*" style="display: none;" />
+
+        <!-- 映像ミラー反転切替ボタン（動画再生時の左右反転切替） -->
+        <button id="mirror-toggle-btn" class="ctrl-circle-btn mirror-toggle-btn" aria-label="ミラー反転切替" title="映像の左右反転を切替">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <path d="M 5,6 L 5,18 L 10.5,18 L 10.5,6 Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M 13.5,6 L 13.5,18 L 19,18 L 19,6 Z" fill="currentColor" opacity="0.85"/>
+            <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2,2"/>
+          </svg>
+        </button>
+
         <!-- 楽曲選択丸ボタン＆ポップアップメニュー -->
         <div class="song-select-container">
           <button id="song-select-btn" class="ctrl-circle-btn song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
@@ -79,6 +97,23 @@
             <button class="song-menu-item" data-song="mary_had_a_little_lamb">メリーさんのひつじ</button>
             <button class="song-menu-item" data-song="saints">聖者の行進</button>
           </div>
+        </div>
+      </div>
+
+      <!-- デモ動画再生コントロールバー（動画読み込み時のみ表示・白黒ミニマル） -->
+      <div id="video-control-bar" class="video-control-bar hidden" role="toolbar" aria-label="動画再生コントロール">
+        <button id="video-play-pause-btn" class="vid-ctrl-btn" title="再生/一時停止" aria-label="再生/一時停止">❚❚</button>
+        <input type="range" id="video-seek-slider" class="vid-seek-slider" min="0" max="100" value="0" step="0.1" aria-label="シークバー" />
+        <span id="video-time-display" class="vid-time-display">0:00 / 0:00</span>
+        <button id="video-restart-btn" class="vid-ctrl-btn" title="最初から再生（演奏もリセット）" aria-label="最初から再生">↺</button>
+        <button id="video-camera-return-btn" class="vid-ctrl-btn vid-close-btn" title="カメラに戻る" aria-label="カメラに戻る">✕</button>
+      </div>
+
+      <!-- ドラッグ＆ドロップ受付オーバーレイ -->
+      <div id="drop-overlay" class="drop-overlay hidden">
+        <div class="drop-modal">
+          <div class="drop-icon">🎬</div>
+          <div class="drop-text">デモ動画ファイルをドロップして鍵盤合成</div>
         </div>
       </div>
 
