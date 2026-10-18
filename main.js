@@ -55,6 +55,12 @@ const targetTapProgress = document.getElementById("target-tap-progress");
 const songProgressBadge = document.getElementById("song-progress-badge");
 const debugPanel = document.getElementById("debug-panel");
 
+// 画面最上部：3オクターブ ピアノ鍵盤（半透明・四角・HUD専用）
+const pianoKeyboard = document.getElementById("piano-keyboard");
+const pianoKeys = pianoKeyboard ? pianoKeyboard.querySelectorAll(".key") : [];
+// iOS/WebKit用：システム主音量（Playback）セッション昇格用オーディオ
+const silentAudio = document.getElementById("silent-audio-unlock");
+
 // デバッグHUDの表示状態フラグ（非表示時は毎フレームのDOM書き込み・文字列演算をスキップ）
 let isDebugPanelVisible = false;
 function checkDebugPanelVisibility() {
@@ -244,6 +250,12 @@ export function ensureAudioContext() {
     });
   }
 
+  // iOS Safari/WebKit用：オーディオセッションをPlayback（システム主音量・メディア音量）に昇格
+  // これにより通知音量ではなく端末のシステム主音量（メディアボリューム）側でピアノが鳴るようになります
+  if (silentAudio && silentAudio.paused) {
+    silentAudio.play().catch(() => {});
+  }
+
   // 初回サウンド有効化バナーがあれば非表示にする
   const banner = document.getElementById("audio-start-banner");
   if (banner && !banner.classList.contains("hidden")) {
@@ -381,6 +393,9 @@ export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true, veloc
       const humanVelocity = Math.min(1, Math.max(0.05, velocity * (0.94 + Math.random() * 0.1)));
       const time = Tone.now() + (mode === "pedal" ? Math.random() * 0.008 : 0);
 
+      // 該当音のピアノ鍵盤が存在すればフラッシュ演出
+      flashPianoKey(noteName);
+
       if (mode === "melody") {
         // 前のメロディ音を離鍵してから次の音を打鍵（同じ音の連打でも打ち直しが自然に聞こえる）
         if (heldMelodyNote !== null) {
@@ -403,6 +418,7 @@ export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true, veloc
     }
   } else {
     // サンプル音源ロード完了前はフォールバック合成
+    flashPianoKey(noteName);
     playSynthFallback(freq, velocity);
   }
 
@@ -1273,6 +1289,39 @@ export function updateHandGuideWidget(fingerKey, fingerNum, note) {
 }
 
 /**
+ * 鍵盤上のターゲット音キーのハイライト更新（白黒モノトーン）
+ * @param {string} targetNote 例: "E5"
+ */
+export function updatePianoKeyboardTarget(targetNote) {
+  if (!pianoKeys || pianoKeys.length === 0) return;
+  pianoKeys.forEach((key) => {
+    if (key.dataset.note === targetNote) {
+      key.classList.add("is-target");
+    } else {
+      key.classList.remove("is-target");
+    }
+  });
+}
+
+/**
+ * 打鍵時の鍵盤フラッシュ演出（白黒反転）
+ * @param {string} noteName 例: "E5"
+ */
+export function flashPianoKey(noteName) {
+  if (!pianoKeys || pianoKeys.length === 0) return;
+  pianoKeys.forEach((key) => {
+    if (key.dataset.note === noteName) {
+      key.classList.add("is-pressed");
+      setTimeout(() => {
+        key.classList.remove("is-pressed");
+      }, 140);
+    }
+  });
+}
+
+// ピアノ鍵盤は表示専用HUD（タップ演奏イベントなし）
+
+/**
  * 楽曲進行とターゲット指UIの更新
  */
 export function renderSongGuideUI() {
@@ -1281,6 +1330,9 @@ export function renderSongGuideUI() {
 
   // 画面右上：右手運指ガイドウィジェットのハイライト更新
   updateHandGuideWidget(currentItem.fingerKey, currentItem.fingerNum, currentItem.note);
+
+  // 画面上部：ピアノ鍵盤のターゲット音ハイライト更新
+  updatePianoKeyboardTarget(currentItem.rightNote);
 
   if (targetFingerVal) {
     const fingerName = FINGER_NAMES[currentItem.fingerKey] || currentItem.fingerKey;
@@ -1506,13 +1558,13 @@ function updateAndRenderNotes() {
 
   const now = performance.now();
 
-  // 1. 各指のガイドライン（画面上端から指先への極薄ネオンレーン）
+  // 1. 各指のガイドライン（画面最上部鍵盤下端から指先への極薄ネオンレーン）
   const fingerKeys = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
   fingerKeys.forEach((fKey) => {
     const pos = getGuideFingerScreenPos(fKey);
     const isTarget = fKey === currentFingerKey;
     notesCtx.beginPath();
-    notesCtx.moveTo(pos.x, 24);
+    notesCtx.moveTo(pos.x, 52);
     notesCtx.lineTo(pos.x, pos.y);
     notesCtx.strokeStyle = isTarget ? "rgba(0, 229, 255, 0.18)" : "rgba(255, 255, 255, 0.04)";
     notesCtx.lineWidth = isTarget ? 2.0 : 1.0;
@@ -1542,8 +1594,8 @@ function updateAndRenderNotes() {
       curProg += (targetProg - curProg) * 0.14;
       noteProgressMap.set(stepIdx, curProg);
 
-      // 画面上のY座標（画面上端 44px から指先 targetPos.y へ）
-      const startY = 44;
+      // 画面上のY座標（鍵盤下端 52px から指先 targetPos.y へ）
+      const startY = 52;
       const curX = targetPos.x;
       const curY = startY + (targetPos.y - startY) * curProg;
 
@@ -2907,6 +2959,9 @@ function drawRawHandLandmarks(results) {
 
       // 右手正解メロディ音を発音（レガート奏法・前の音を自然にリリースして打鍵）
       playTapSound(currentTarget.rightNote || currentTarget.freq, true, MELODY_VELOCITY, "melody");
+
+      // 画面上部ピアノ鍵盤の打鍵フラッシュ（白黒反転フィードバック）
+      flashPianoKey(currentTarget.rightNote);
 
       // 自動伴奏（和音・左手パート・テンポ追従裏拍）を重ねて発音（プレイヤーの打鍵操作は不要）
       playAccompaniment(currentTarget);

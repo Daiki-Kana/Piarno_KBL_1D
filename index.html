@@ -87,6 +87,64 @@
         <div id="countdown-text" class="countdown-text">3</div>
       </div>
 
+      <!-- iOS/WebKit用：オーディオセッションをPlayback（システム主音量）に昇格させる無音オーディオ -->
+      <audio id="silent-audio-unlock" loop playsinline preload="auto" src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA" style="display: none;"></audio>
+
+      <!-- 画面最上部：3オクターブ 全幅半透明ミニマル鍵盤 (C3〜C6 / スクエア・テキストなし) -->
+      <div id="piano-keyboard" class="piano-keyboard" role="presentation" aria-hidden="true">
+        <div class="keyboard-inner">
+          <!-- 白鍵 22鍵 (C3〜C6) -->
+          <div class="white-keys">
+            <!-- 第1オクターブ (C3〜B3) -->
+            <div class="key white-key" data-note="C3"></div>
+            <div class="key white-key" data-note="D3"></div>
+            <div class="key white-key" data-note="E3"></div>
+            <div class="key white-key" data-note="F3"></div>
+            <div class="key white-key" data-note="G3"></div>
+            <div class="key white-key" data-note="A3"></div>
+            <div class="key white-key" data-note="B3"></div>
+            <!-- 第2オクターブ (C4〜B4) -->
+            <div class="key white-key" data-note="C4"></div>
+            <div class="key white-key" data-note="D4"></div>
+            <div class="key white-key" data-note="E4"></div>
+            <div class="key white-key" data-note="F4"></div>
+            <div class="key white-key" data-note="G4"></div>
+            <div class="key white-key" data-note="A4"></div>
+            <div class="key white-key" data-note="B4"></div>
+            <!-- 第3オクターブ (C5〜C6) -->
+            <div class="key white-key" data-note="C5"></div>
+            <div class="key white-key" data-note="D5"></div>
+            <div class="key white-key" data-note="E5"></div>
+            <div class="key white-key" data-note="F5"></div>
+            <div class="key white-key" data-note="G5"></div>
+            <div class="key white-key" data-note="A5"></div>
+            <div class="key white-key" data-note="B5"></div>
+            <div class="key white-key" data-note="C6"></div>
+          </div>
+          <!-- 黒鍵 15鍵 (C#3〜A#3, C#4〜A#4, C#5〜A#5) -->
+          <div class="black-keys">
+            <!-- 第1オクターブ黒鍵 -->
+            <div class="key black-key" data-note="C#3" style="left: calc((100% / 22) * 1 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="D#3" style="left: calc((100% / 22) * 2 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="F#3" style="left: calc((100% / 22) * 4 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="G#3" style="left: calc((100% / 22) * 5 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="A#3" style="left: calc((100% / 22) * 6 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <!-- 第2オクターブ黒鍵 -->
+            <div class="key black-key" data-note="C#4" style="left: calc((100% / 22) * 8 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="D#4" style="left: calc((100% / 22) * 9 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="F#4" style="left: calc((100% / 22) * 11 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="G#4" style="left: calc((100% / 22) * 12 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="A#4" style="left: calc((100% / 22) * 13 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <!-- 第3オクターブ黒鍵 -->
+            <div class="key black-key" data-note="C#5" style="left: calc((100% / 22) * 15 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="D#5" style="left: calc((100% / 22) * 16 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="F#5" style="left: calc((100% / 22) * 18 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="G#5" style="left: calc((100% / 22) * 19 - (var(--black-key-width, 3.0%) / 2));"></div>
+            <div class="key black-key" data-note="A#5" style="left: calc((100% / 22) * 20 - (var(--black-key-width, 3.0%) / 2));"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- 画面上部：演奏進捗テキストバッジ（白黒ミニマル） -->
       <div id="song-progress-badge" class="song-progress-badge">1 / 62</div>
 

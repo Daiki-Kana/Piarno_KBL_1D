@@ -197,7 +197,7 @@ html, body {
    ========================================================================== */
 .top-right-controls {
   position: absolute;
-  top: calc(16px + env(safe-area-inset-top, 0px));
+  top: calc(62px + env(safe-area-inset-top, 0px));
   right: calc(16px + env(safe-area-inset-right, 0px));
   z-index: 200;
   display: flex;
@@ -494,11 +494,106 @@ html, body {
 }
 
 /* ==========================================================================
+   画面最上部：3オクターブ ピアノ鍵盤（全幅・半透明・完全四角・テキストなし）
+   ========================================================================== */
+.piano-keyboard {
+  --black-key-width: 2.8%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  background-color: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 220;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.keyboard-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* 白鍵（22鍵：C3〜C6 全幅均等配置・半透明スクエア） */
+.white-keys {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 1px;
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.white-key {
+  flex: 1;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: none;
+  border-radius: 0;
+  position: relative;
+  transition: background-color 0.08s ease, box-shadow 0.12s ease;
+}
+
+/* 黒鍵（15鍵：半透明ダーク・完全四角） */
+.black-keys {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.black-key {
+  position: absolute;
+  top: 0;
+  width: var(--black-key-width, 2.8%);
+  height: 60%;
+  background-color: rgba(16, 16, 16, 0.82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: none;
+  border-radius: 0;
+  z-index: 5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition: background-color 0.08s ease, box-shadow 0.12s ease;
+}
+
+/* ターゲット音（次に弾くべきキーの薄い水色ガイド発光） */
+.white-key.is-target {
+  background-color: rgba(205, 245, 255, 0.75);
+  box-shadow: inset 0 -4px 0 0 #00e5ff;
+}
+
+.black-key.is-target {
+  background-color: rgba(12, 36, 45, 0.92);
+  box-shadow: inset 0 -4px 0 0 #00e5ff;
+}
+
+/* 打鍵時（タップ認識時の水色ネオンフラッシュ） */
+.white-key.is-pressed {
+  background-color: rgba(0, 229, 255, 0.92) !important;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.7) !important;
+}
+
+.black-key.is-pressed {
+  background-color: rgba(0, 229, 255, 0.92) !important;
+  border-color: #00e5ff !important;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.7) !important;
+}
+
+/* ==========================================================================
    演奏進捗バッジ（画面上部中央・白黒ミニマル）
    ========================================================================== */
 .song-progress-badge {
   position: absolute;
-  top: 16px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(20, 20, 20, 0.85);
