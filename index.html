@@ -18,7 +18,7 @@
 
       <!-- メイン映像コンテナ（ビデオとCanvasを自然比率で完全重畳） -->
       <div class="video-container">
-        <video id="webcam" playsinline autoplay muted></video>
+        <video id="webcam" playsinline webkit-playsinline autoplay muted loop></video>
         <canvas id="output-canvas"></canvas>
       </div>
 
@@ -70,14 +70,14 @@
           </svg>
         </button>
 
-        <!-- デモ動画ファイル読み込みボタン（動画合成用） -->
-        <button id="video-load-btn" class="ctrl-circle-btn video-load-btn" aria-label="デモ動画を読み込み" title="デモ動画ファイルを読み込んで鍵盤合成">
+        <!-- デモ動画ファイル読み込みボタン（スマホネイティブタップ連動 label） -->
+        <label for="video-file-input" id="video-load-btn" class="ctrl-circle-btn video-load-btn" aria-label="デモ動画を読み込み" title="デモ動画ファイルを読み込んで鍵盤合成">
           <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
             <path d="M 4,5 L 16,5 C 17.1,5 18,5.9 18,7 L 18,17 C 18,18.1 17.1,19 16,19 L 4,19 C 2.9,19 2,18.1 2,17 L 2,7 C 2,5.9 2.9,5 4,5 Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
             <polygon points="18,9.5 22,6.5 22,17.5 18,14.5" fill="currentColor"/>
           </svg>
-        </button>
-        <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/quicktime,video/*" style="display: none;" />
+        </label>
+        <input type="file" id="video-file-input" accept="video/*" style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;" />
 
         <!-- 映像ミラー反転切替ボタン（動画再生時の左右反転切替） -->
         <button id="mirror-toggle-btn" class="ctrl-circle-btn mirror-toggle-btn" aria-label="ミラー反転切替" title="映像の左右反転を切替">
@@ -221,6 +221,10 @@
           <button id="start-play-btn" class="start-play-btn">
             <span id="start-play-text">スタート</span>
           </button>
+          <!-- スマホでも迷わずデモ動画を選べるスタート画面用ボタン（ネイティブタップ連動） -->
+          <label for="video-file-input" class="start-video-btn" id="start-video-label">
+            🎬 デモ動画を選択して合成再生
+          </label>
           <div class="start-hint">
             ※iPadで画面が勝手にズームする場合は、コントロールセンターからセンターステージをOFFにしてください
           </div>

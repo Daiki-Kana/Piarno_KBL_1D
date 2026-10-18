@@ -3615,16 +3615,22 @@ function formatVideoTime(sec) {
 }
 
 /**
- * デモ動画ファイルを読み込んで再生し、鍵盤・ノーツと同期
+ * デモ動画ファイルを読み込んで再生し、鍵盤・ノーツと同期（スマホ・タブレット完全対応）
  * @param {File} file
  */
 export async function loadDemoVideoFile(file) {
   if (!file) return;
 
-  console.log(`[VIDEO FILE] 動画ファイルを読み込み開始: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+  console.log(`[VIDEO FILE] 動画ファイルを読み込み開始: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB, タイプ: ${file.type})`);
   ensureAudioContext();
 
-  // 1. 既存のカメラストリームがあれば停止
+  // 1. スタートモーダルやカメラエラー画面を確実に閉じる
+  if (startModal) startModal.classList.add("hidden");
+  if (cameraErrorOverlay) cameraErrorOverlay.classList.add("hidden");
+  const audioBanner = document.getElementById("audio-start-banner");
+  if (audioBanner) audioBanner.classList.add("hidden");
+
+  // 2. 既存のカメラストリームがあれば停止
   if (currentStream) {
     try {
       currentStream.getTracks().forEach((track) => track.stop());
@@ -3634,23 +3640,30 @@ export async function loadDemoVideoFile(file) {
     currentStream = null;
   }
 
-  // 2. 過去のObjectURLがあれば解放
+  // 3. 過去のObjectURLがあれば解放
   if (currentVideoObjectUrl) {
     URL.revokeObjectURL(currentVideoObjectUrl);
     currentVideoObjectUrl = null;
   }
 
-  // 3. 動画ファイルをObject URLとしてセット
+  // 4. iOS Safari / モバイル向けインライン再生・消音属性を厳格に設定
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.setAttribute("muted", "");
+  video.playsInline = true;
+  video.muted = true;
+  video.defaultMuted = true;
+  video.loop = false;
+
+  // 5. 動画ファイルをObject URLとしてセット
   currentVideoObjectUrl = URL.createObjectURL(file);
   video.srcObject = null;
   video.src = currentVideoObjectUrl;
-  video.muted = true; // 動画の元音声による二重発音を防ぎ、アプリのピアノ音を綺麗に重ねる
-  video.loop = false;
-  video.playsInline = true;
+  video.load(); // iOS SafariでのBlobロードをトリガー
 
   isVideoFileMode = true;
 
-  // 4. 楽曲進行を第1音にリセット
+  // 6. 楽曲進行を第1音にリセット
   currentSongStep = 0;
   if (currentSequence && currentSequence.length > 0) {
     setTargetFinger(currentSequence[0].fingerKey);
@@ -3660,18 +3673,20 @@ export async function loadDemoVideoFile(file) {
   releaseAllNotes();
   noteProgressMap.clear();
 
-  // 5. 動画メタデータ読み込み完了時にアスペクト比同期と再生開始
-  video.onloadedmetadata = async () => {
+  // 7. ユーザー操作スタック内で即座にplay()を開始（iOSの自動再生ブロックを回避）
+  try {
+    await video.play();
+    if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
+    if (videoControlBar) videoControlBar.classList.remove("hidden");
+  } catch (err) {
+    console.warn("[VIDEO FILE] 直後再生待機（canplayで再試行）:", err);
+  }
+
+  // 8. メタデータ読み込み時にアスペクト比同期
+  video.onloadedmetadata = () => {
     updateCanvasResolution();
-    try {
-      await video.play();
-      console.log(`[VIDEO FILE] 動画再生開始: ${video.videoWidth}x${video.videoHeight}, 長さ: ${video.duration.toFixed(1)}s`);
-      if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
-      if (videoControlBar) videoControlBar.classList.remove("hidden");
-    } catch (err) {
-      console.warn("[VIDEO FILE] 動画自動再生エラー（ユーザー操作待ち）:", err);
-      if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "▶";
-    }
+    console.log(`[VIDEO FILE] 動画サイズ: ${video.videoWidth}x${video.videoHeight}, 長さ: ${video.duration.toFixed(1)}s`);
+    if (videoControlBar) videoControlBar.classList.remove("hidden");
 
     // 推論ループを確実に稼働
     if (!isPredicting) {
@@ -3680,7 +3695,19 @@ export async function loadDemoVideoFile(file) {
     }
   };
 
-  // 6. タイムライン更新
+  // 9. canplayで再生を再保証
+  video.oncanplay = () => {
+    updateCanvasResolution();
+    if (video.paused) {
+      video.play().catch(() => {});
+    }
+    if (!isPredicting) {
+      isPredicting = true;
+      schedulePredictLoop();
+    }
+  };
+
+  // 10. タイムライン更新
   video.ontimeupdate = () => {
     if (!video.duration) return;
     const progress = (video.currentTime / video.duration) * 100;
@@ -3690,7 +3717,7 @@ export async function loadDemoVideoFile(file) {
     }
   };
 
-  // 7. 動画終了時の自動ループ＆楽曲リセット
+  // 11. 動画終了時の自動ループ＆楽曲リセット
   video.onended = () => {
     console.log("[VIDEO FILE] 動画終了。先頭からループ再生します");
     restartVideoPlayback();
@@ -3716,15 +3743,10 @@ function restartVideoPlayback() {
   if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
 }
 
-// 動画読み込みボタン
-if (videoLoadBtn && videoFileInput) {
-  videoLoadBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    ensureAudioContext();
-    videoFileInput.click();
-  });
-
+// 動画ファイル選択イベント（labelタップによるネイティブトリガー）
+if (videoFileInput) {
   videoFileInput.addEventListener("change", (e) => {
+    ensureAudioContext();
     const file = e.target.files && e.target.files[0];
     if (file) {
       loadDemoVideoFile(file);
