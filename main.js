@@ -2617,6 +2617,10 @@ let lastVideoTimestamp = -1;
  */
 function processVideoFrame(frameTime) {
   if (!isPredicting) return;
+  if (!handLandmarker) return;
+
+  // ビデオ要素のフレーム読み取り準備状態を確認（iOS等でデータ未到達時の推論エラー防止）
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
   // カメラ解像度とCanvas解像度の完全一致を常時保証（iPadの向き変更・比率変更時の座標ズレ防止）
   if (video.videoWidth && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) {
@@ -2624,25 +2628,30 @@ function processVideoFrame(frameTime) {
   }
 
   // 正確なフレーム時間をミリ秒で算出（MediaPipe VIDEOモードが要求する厳密な単調増加を保証）
-  const now = typeof frameTime === "number" ? frameTime : performance.now();
+  const now = typeof frameTime === "number" && !isNaN(frameTime) ? frameTime : performance.now();
   const timestampMs = Math.max(now, lastVideoTimestamp + 1.0);
   lastVideoTimestamp = timestampMs;
 
   const startTime = performance.now();
 
-  // VIDEOモードでの同期推論（正確なタイムスタンプにより内部トラッキング予測器が安定化）
-  const results = handLandmarker.detectForVideo(video, timestampMs);
+  try {
+    // VIDEOモードでの同期推論（正確なタイムスタンプにより内部トラッキング予測器が安定化）
+    const results = handLandmarker.detectForVideo(video, timestampMs);
 
-  const calcDuration = performance.now() - startTime;
-  if (isDebugPanelVisible) {
-    inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
+    const calcDuration = performance.now() - startTime;
+    if (isDebugPanelVisible) {
+      inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
+    }
+
+    // 生ランドマーク座標の直接描画
+    drawRawHandLandmarks(results);
+
+    // FPS更新
+    updateFps();
+  } catch (err) {
+    // 推論例外発生時もループを切断せず次フレームで継続
+    console.warn("[INFERENCE] 推論フレーム処理警告:", err);
   }
-
-  // 生ランドマーク座標の直接描画
-  drawRawHandLandmarks(results);
-
-  // FPS更新
-  updateFps();
 }
 
 /**
@@ -2729,6 +2738,7 @@ function isAnatomicallyRightHand(hand, isCurrentlyTracked = false) {
  * - 追従中は候補数に関わらず画面幅25%以上の距離ジャンプを無条件遮断（左手飛び移り防止）
  * - ナックル外積のヒステリシスにより、ローアングル打鍵時のチャタリング（判定点滅）を解消
  * - 右手が画面から消えた場合は左手に乗り換えず、右手が戻るまで待機（null返却）
+ * - デモ動画再生モード時は外カメラ撮影や左右反転にも対応できるよう柔軟にフォールバック
  * @param {object} results MediaPipe HandLandmarkerの検出結果
  * @returns {Array<object> | null} 追従対象の右手の全21ランドマーク配列（未検出時はnull）
  */
@@ -2738,6 +2748,29 @@ function selectRightHandLandmarks(results) {
   }
 
   const hands = results.landmarks;
+
+  // ========================================================
+  // デモ動画ファイル再生モード（外カメラ・左右反転・左手撮影などあらゆる動画に対応）
+  // ========================================================
+  if (isVideoFileMode) {
+    if (lastTrackedWrist) {
+      let closestHand = hands[0];
+      let minDistance = Infinity;
+      for (let i = 0; i < hands.length; i++) {
+        const hand = hands[i];
+        const wrist = hand[0];
+        const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestHand = hand;
+        }
+      }
+      return closestHand;
+    }
+    // 未追従時はナックル右手判定に一致する手を優先、無ければ検出された最初の手を採用
+    const rightCandidate = hands.find((h) => isAnatomicallyRightHand(h, false));
+    return rightCandidate || hands[0];
+  }
 
   // ========================================================
   // 1. 追従中（lastTrackedWrist が存在する場合）：
@@ -3012,13 +3045,49 @@ function drawRawHandLandmarks(results) {
   // 4. デバッグHUDのリアルタイム表示更新（平滑化座標、相対変位、下降速度）
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy, tipVy);
 
-  // 5. 指定された指の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
+  // 5. 指定された指および手全体の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
   if (showTrackingLines) {
     canvasCtx.save();
     canvasCtx.lineCap = "round";
     canvasCtx.lineJoin = "round";
 
-    // 共通骨格パス生成
+    // 手全体の骨格接続リスト（親指・人差し指・中指・薬指・小指・ナックル横ライン・掌）
+    const FULL_HAND_CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],        // 親指
+      [0, 5], [5, 6], [6, 7], [7, 8],        // 人差し指
+      [9, 10], [10, 11], [11, 12],           // 中指
+      [13, 14], [14, 15], [15, 16],          // 薬指
+      [0, 17], [17, 18], [18, 19], [19, 20], // 小指
+      [5, 9], [9, 13], [13, 17],             // ナックル基部横ライン
+      [0, 9]                                 // 手首から手のひら中心
+    ];
+
+    // 層0: 手全体の基本骨格ライン（半透明シアンによる近未来HUD表示）
+    canvasCtx.strokeStyle = "rgba(0, 229, 255, 0.40)";
+    canvasCtx.lineWidth = 2.2;
+    FULL_HAND_CONNECTIONS.forEach(([fromIdx, toIdx]) => {
+      const from = landmarks[fromIdx];
+      const to = landmarks[toIdx];
+      if (from && to) {
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(from.x * width, from.y * height);
+        canvasCtx.lineTo(to.x * width, to.y * height);
+        canvasCtx.stroke();
+      }
+    });
+
+    // 全21関節の微小ドット描画
+    canvasCtx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    for (let i = 0; i < landmarks.length; i++) {
+      const pt = landmarks[i];
+      if (pt) {
+        canvasCtx.beginPath();
+        canvasCtx.arc(pt.x * width, pt.y * height, 2.2, 0, 2 * Math.PI);
+        canvasCtx.fill();
+      }
+    }
+
+    // 共通骨格パス生成（現在演奏対象の指）
     const drawBonePath = () => {
       canvasCtx.beginPath();
       canvasCtx.moveTo(smoothP1.x, smoothP1.y);
@@ -3590,11 +3659,13 @@ document.addEventListener("visibilitychange", () => {
 const videoLoadBtn = document.getElementById("video-load-btn");
 const videoFileInput = document.getElementById("video-file-input");
 const mirrorToggleBtn = document.getElementById("mirror-toggle-btn");
+const videoToggleBarBtn = document.getElementById("video-toggle-bar-btn");
 const videoControlBar = document.getElementById("video-control-bar");
 const videoPlayPauseBtn = document.getElementById("video-play-pause-btn");
 const videoSeekSlider = document.getElementById("video-seek-slider");
 const videoTimeDisplay = document.getElementById("video-time-display");
 const videoRestartBtn = document.getElementById("video-restart-btn");
+const videoHideBarBtn = document.getElementById("video-hide-bar-btn");
 const videoCameraReturnBtn = document.getElementById("video-camera-return-btn");
 const dropOverlay = document.getElementById("drop-overlay");
 
@@ -3602,6 +3673,20 @@ const dropOverlay = document.getElementById("drop-overlay");
 let isVideoFileMode = false;
 let currentVideoObjectUrl = null;
 let isVideoMirrored = true;
+
+/**
+ * シークバー（コントロールバー）の表示 / 非表示を切り替え（プレゼン動画録画用）
+ * @param {boolean} [forceState] 明示的な表示状態（省略時はトグル）
+ */
+function toggleVideoControlBar(forceState) {
+  if (!videoControlBar) return;
+  const isCurrentlyHidden = videoControlBar.classList.contains("hidden");
+  const willShow = typeof forceState === "boolean" ? forceState : isCurrentlyHidden;
+  videoControlBar.classList.toggle("hidden", !willShow);
+  if (videoToggleBarBtn) {
+    videoToggleBarBtn.classList.toggle("active", willShow);
+  }
+}
 
 /**
  * 秒数を "m:ss" 形式にフォーマット
@@ -3630,7 +3715,28 @@ export async function loadDemoVideoFile(file) {
   const audioBanner = document.getElementById("audio-start-banner");
   if (audioBanner) audioBanner.classList.add("hidden");
 
-  // 2. 既存のカメラストリームがあれば停止
+  // 手のイラストウィジェットを確実に非表示に（ユーザー要望）
+  const handGuideWidget = document.getElementById("hand-guide-widget");
+  if (handGuideWidget) handGuideWidget.style.display = "none";
+
+  // 骨格描画（トラッキングライン）を確実に有効化
+  showTrackingLines = true;
+
+  // 2. HandLandmarker のロード完了を確実に待機（モデル未初期化によるdetectForVideo null例外を完全防止）
+  try {
+    if (!handLandmarker) {
+      updateStatus("AIモデル読込待機中...");
+      if (handLandmarkerPromise) {
+        await handLandmarkerPromise;
+      } else {
+        await initHandLandmarker();
+      }
+    }
+  } catch (err) {
+    console.error("[VIDEO FILE] HandLandmarker初期化失敗:", err);
+  }
+
+  // 3. 既存のカメラストリームがあれば停止
   if (currentStream) {
     try {
       currentStream.getTracks().forEach((track) => track.stop());
@@ -3640,13 +3746,13 @@ export async function loadDemoVideoFile(file) {
     currentStream = null;
   }
 
-  // 3. 過去のObjectURLがあれば解放
+  // 4. 過去のObjectURLがあれば解放
   if (currentVideoObjectUrl) {
     URL.revokeObjectURL(currentVideoObjectUrl);
     currentVideoObjectUrl = null;
   }
 
-  // 4. iOS Safari / モバイル向けインライン再生・消音属性を厳格に設定
+  // 5. iOS Safari / モバイル向けインライン再生・消音属性を厳格に設定
   video.setAttribute("playsinline", "");
   video.setAttribute("webkit-playsinline", "");
   video.setAttribute("muted", "");
@@ -3655,7 +3761,7 @@ export async function loadDemoVideoFile(file) {
   video.defaultMuted = true;
   video.loop = false;
 
-  // 5. 動画ファイルをObject URLとしてセット
+  // 6. 動画ファイルをObject URLとしてセット
   currentVideoObjectUrl = URL.createObjectURL(file);
   video.srcObject = null;
   video.src = currentVideoObjectUrl;
@@ -3663,7 +3769,7 @@ export async function loadDemoVideoFile(file) {
 
   isVideoFileMode = true;
 
-  // 6. 楽曲進行を第1音にリセット
+  // 7. 楽曲進行を第1音にリセット
   currentSongStep = 0;
   if (currentSequence && currentSequence.length > 0) {
     setTargetFinger(currentSequence[0].fingerKey);
@@ -3673,20 +3779,22 @@ export async function loadDemoVideoFile(file) {
   releaseAllNotes();
   noteProgressMap.clear();
 
-  // 7. ユーザー操作スタック内で即座にplay()を開始（iOSの自動再生ブロックを回避）
+  // 8. ユーザー操作スタック内で即座にplay()を開始（iOSの自動再生ブロックを回避）
   try {
     await video.play();
     if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
     if (videoControlBar) videoControlBar.classList.remove("hidden");
+    if (videoToggleBarBtn) videoToggleBarBtn.classList.remove("hidden");
   } catch (err) {
     console.warn("[VIDEO FILE] 直後再生待機（canplayで再試行）:", err);
   }
 
-  // 8. メタデータ読み込み時にアスペクト比同期
+  // 9. メタデータ読み込み時にアスペクト比同期
   video.onloadedmetadata = () => {
     updateCanvasResolution();
     console.log(`[VIDEO FILE] 動画サイズ: ${video.videoWidth}x${video.videoHeight}, 長さ: ${video.duration.toFixed(1)}s`);
     if (videoControlBar) videoControlBar.classList.remove("hidden");
+    if (videoToggleBarBtn) videoToggleBarBtn.classList.remove("hidden");
 
     // 推論ループを確実に稼働
     if (!isPredicting) {
@@ -3695,7 +3803,7 @@ export async function loadDemoVideoFile(file) {
     }
   };
 
-  // 9. canplayで再生を再保証
+  // 10. canplayで再生を再保証
   video.oncanplay = () => {
     updateCanvasResolution();
     if (video.paused) {
@@ -3707,7 +3815,7 @@ export async function loadDemoVideoFile(file) {
     }
   };
 
-  // 10. タイムライン更新
+  // 11. タイムライン更新
   video.ontimeupdate = () => {
     if (!video.duration) return;
     const progress = (video.currentTime / video.duration) * 100;
@@ -3717,7 +3825,7 @@ export async function loadDemoVideoFile(file) {
     }
   };
 
-  // 11. 動画終了時の自動ループ＆楽曲リセット
+  // 12. 動画終了時の自動ループ＆楽曲リセット
   video.onended = () => {
     console.log("[VIDEO FILE] 動画終了。先頭からループ再生します");
     restartVideoPlayback();
@@ -3767,6 +3875,39 @@ if (mirrorToggleBtn) {
   });
 }
 
+// シークバー（コントロールバー）表示/非表示切替ボタン（右上アイコン）
+if (videoToggleBarBtn) {
+  videoToggleBarBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleVideoControlBar();
+  });
+}
+
+// シークバー内「隠す」ボタン
+if (videoHideBarBtn) {
+  videoHideBarBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleVideoControlBar(false);
+  });
+}
+
+// 動画再生中、画面（コンテナ）タップでシークバーの表示/非表示をトグル（録画用）
+const videoContainerEl = document.querySelector(".video-container");
+if (videoContainerEl) {
+  videoContainerEl.addEventListener("click", (e) => {
+    if (!isVideoFileMode) return;
+    // コントロールバー自体、右上ボタン群、モーダル内のクリックは除外
+    if (
+      e.target.closest("#video-control-bar") ||
+      e.target.closest(".top-right-controls") ||
+      e.target.closest(".start-modal")
+    ) {
+      return;
+    }
+    toggleVideoControlBar();
+  });
+}
+
 // 再生/一時停止ボタン
 if (videoPlayPauseBtn) {
   videoPlayPauseBtn.addEventListener("click", () => {
@@ -3811,6 +3952,7 @@ if (videoCameraReturnBtn) {
     video.srcObject = null;
     isVideoFileMode = false;
     if (videoControlBar) videoControlBar.classList.add("hidden");
+    if (videoToggleBarBtn) videoToggleBarBtn.classList.add("hidden");
 
     // 楽曲リセット
     currentSongStep = 0;

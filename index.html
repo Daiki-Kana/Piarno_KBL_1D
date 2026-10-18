@@ -88,6 +88,14 @@
           </svg>
         </button>
 
+        <!-- シークバー/コントロールバー表示・非表示切替ボタン（録画用ミニマル化） -->
+        <button id="video-toggle-bar-btn" class="ctrl-circle-btn video-toggle-bar-btn hidden" aria-label="シークバーの表示切替" title="シークバー（コントロールバー）の表示/非表示を切替">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+            <path d="M 2,12 C 4,6.5 8,3 12,3 C 16,3 20,6.5 22,12 C 20,17.5 16,21 12,21 C 8,21 4,17.5 2,12 Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          </svg>
+        </button>
+
         <!-- 楽曲選択丸ボタン＆ポップアップメニュー -->
         <div class="song-select-container">
           <button id="song-select-btn" class="ctrl-circle-btn song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
@@ -106,6 +114,7 @@
         <input type="range" id="video-seek-slider" class="vid-seek-slider" min="0" max="100" value="0" step="0.1" aria-label="シークバー" />
         <span id="video-time-display" class="vid-time-display">0:00 / 0:00</span>
         <button id="video-restart-btn" class="vid-ctrl-btn" title="最初から再生（演奏もリセット）" aria-label="最初から再生">↺</button>
+        <button id="video-hide-bar-btn" class="vid-ctrl-btn" title="シークバーを隠す（画面タップまたは右上ボタンで再表示）" aria-label="シークバーを隠す">👁</button>
         <button id="video-camera-return-btn" class="vid-ctrl-btn vid-close-btn" title="カメラに戻る" aria-label="カメラに戻る">✕</button>
       </div>
 

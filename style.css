@@ -228,6 +228,7 @@ html, body {
    右手運指ガイドウィジェット（画面右下に半透明・中サイズで固定配置）
    ========================================================================== */
 .hand-guide-widget {
+  display: none !important; /* ユーザー要望：手のイラストを非表示に */
   --hand-guide-size: 200px;
   position: absolute;
   right: calc(16px + env(safe-area-inset-right, 0px));
