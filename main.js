@@ -2969,8 +2969,8 @@ function drawRawHandLandmarks(results) {
   const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 200;
 
   // 3. レベル2打鍵認識（変位 ＋ 平滑化下降速度ゲートにより机面静止待機誤爆を完全遮断）
-  // カウントダウン中（3・2・1）、完走クリア演出中、および画面外復帰初フレームは打鍵認識を安全にスキップ
-  if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired) {
+  // カウントダウン中、完走演出中、復帰初フレーム、および動画ファイル再生時（自動演奏モード）はスキップ
+  if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired && !isVideoFileMode) {
     // 平滑化変位が打鍵閾値以上 かつ 下降速度が速度閾値以上（勢いよく振り下ろされた瞬間）
     if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
       tapState = "TOUCHED";
@@ -3674,6 +3674,61 @@ let isVideoFileMode = false;
 let currentVideoObjectUrl = null;
 let isVideoMirrored = true;
 
+// 動画再生時の自動鍵盤ハイライト・演奏進行タイマー（本来のBPM100より少し遅いゆったりテンポ）
+let autoDemoTimerId = null;
+const DEMO_AUTO_BPM = 78; // 本来（100）より少し遅い落ち着いたテンポ（1拍約769ms）
+const DEMO_BEAT_MS = (60 / DEMO_AUTO_BPM) * 1000;
+
+/**
+ * 動画モード用：自動鍵盤ハイライトタイマーの停止
+ */
+function stopAutoDemoPlayback() {
+  if (autoDemoTimerId) {
+    clearTimeout(autoDemoTimerId);
+    autoDemoTimerId = null;
+  }
+}
+
+/**
+ * 動画モード用：少し遅めの安定したテンポで鍵盤を1音ずつ自動ハイライト・演奏進行
+ */
+function scheduleNextAutoDemoStep() {
+  stopAutoDemoPlayback();
+  if (!isVideoFileMode || !video || video.paused) return;
+
+  if (!currentSequence || currentSequence.length === 0) return;
+
+  const currentTarget = currentSequence[currentSongStep];
+  if (!currentTarget) return;
+
+  // 1. 鍵盤ハイライト（打鍵水色フラッシュ＆ターゲットガイド）
+  flashPianoKey(currentTarget.rightNote);
+  updatePianoKeyboardTarget(currentTarget.rightNote);
+
+  // 2. メロディ音発音＆自動伴奏
+  playTapSound(currentTarget.rightNote || currentTarget.freq, true, MELODY_VELOCITY, "melody");
+  playAccompaniment(currentTarget);
+  triggerNoteHitEffect(currentSongStep);
+
+  // 3. 次のステップ計算（末尾到達時は第1音へ自動ループ）
+  const isLastStep = currentSongStep === currentSequence.length - 1;
+  const nextStepIndex = isLastStep ? 0 : currentSongStep + 1;
+
+  // 音符の拍数（beats）に応じた待機時間（4分音符=1拍 ≒ 769ms、2拍 ≒ 1538ms）
+  const beats = typeof currentTarget.beats === "number" ? currentTarget.beats : 1;
+  const stepDelayMs = Math.round(beats * DEMO_BEAT_MS);
+
+  autoDemoTimerId = setTimeout(() => {
+    if (!isVideoFileMode || !video || video.paused) return;
+    currentSongStep = nextStepIndex;
+    if (currentSequence[currentSongStep]) {
+      setTargetFinger(currentSequence[currentSongStep].fingerKey);
+    }
+    renderSongGuideUI();
+    scheduleNextAutoDemoStep();
+  }, stepDelayMs);
+}
+
 /**
  * シークバー（コントロールバー）の表示 / 非表示を切り替え（プレゼン動画録画用）
  * @param {boolean} [forceState] 明示的な表示状態（省略時はトグル）
@@ -3708,6 +3763,7 @@ export async function loadDemoVideoFile(file) {
 
   console.log(`[VIDEO FILE] 動画ファイルを読み込み開始: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB, タイプ: ${file.type})`);
   ensureAudioContext();
+  stopAutoDemoPlayback();
 
   // 1. スタートモーダルやカメラエラー画面を確実に閉じる
   if (startModal) startModal.classList.add("hidden");
@@ -3785,6 +3841,8 @@ export async function loadDemoVideoFile(file) {
     if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
     if (videoControlBar) videoControlBar.classList.remove("hidden");
     if (videoToggleBarBtn) videoToggleBarBtn.classList.remove("hidden");
+    // 自動鍵盤ハイライト・演奏進行タイマーを開始
+    scheduleNextAutoDemoStep();
   } catch (err) {
     console.warn("[VIDEO FILE] 直後再生待機（canplayで再試行）:", err);
   }
@@ -3801,6 +3859,7 @@ export async function loadDemoVideoFile(file) {
       isPredicting = true;
       schedulePredictLoop();
     }
+    scheduleNextAutoDemoStep();
   };
 
   // 10. canplayで再生を再保証
@@ -3813,6 +3872,7 @@ export async function loadDemoVideoFile(file) {
       isPredicting = true;
       schedulePredictLoop();
     }
+    scheduleNextAutoDemoStep();
   };
 
   // 11. タイムライン更新
@@ -3837,6 +3897,7 @@ export async function loadDemoVideoFile(file) {
  */
 function restartVideoPlayback() {
   if (!video || !isVideoFileMode) return;
+  stopAutoDemoPlayback();
   video.currentTime = 0;
   currentSongStep = 0;
   if (currentSequence && currentSequence.length > 0) {
@@ -3849,6 +3910,7 @@ function restartVideoPlayback() {
 
   video.play().catch(() => {});
   if (videoPlayPauseBtn) videoPlayPauseBtn.textContent = "❚❚";
+  scheduleNextAutoDemoStep();
 }
 
 // 動画ファイル選択イベント（labelタップによるネイティブトリガー）
@@ -3915,9 +3977,11 @@ if (videoPlayPauseBtn) {
     if (video.paused) {
       video.play().catch(() => {});
       videoPlayPauseBtn.textContent = "❚❚";
+      scheduleNextAutoDemoStep();
     } else {
       video.pause();
       videoPlayPauseBtn.textContent = "▶";
+      stopAutoDemoPlayback();
     }
   });
 }
@@ -3942,6 +4006,7 @@ if (videoRestartBtn) {
 if (videoCameraReturnBtn) {
   videoCameraReturnBtn.addEventListener("click", async () => {
     if (!isVideoFileMode) return;
+    stopAutoDemoPlayback();
     console.log("[VIDEO FILE] 動画再生モードを終了し、カメラ映像へ復帰します");
     video.pause();
     if (currentVideoObjectUrl) {
