@@ -954,9 +954,162 @@ export function setTargetFinger(fingerKey) {
 // 初回ターゲット指の骨格接続線を初期化
 updateCachedConnections(currentFingerKey);
 
+// ==========================================================================
+// 88鍵フルサイズ・白黒ミニマルピアノ鍵盤（A0〜C8）制御
+// ==========================================================================
+
+// 各キーのハイライトタイマー管理
+const pianoKeyTimers = new Map();
+
 /**
- * 画面右上の右手運指ガイドUIを更新（指定指を純白ハイライト）
- * @param {string} fingerKey "THUMB" | "INDEX" | "MIDDLE" | "RING" | "PINKY"
+ * 88鍵フルサイズ・白黒ミニマルピアノ鍵盤の動的生成と初期化
+ */
+export function init88KeyPianoKeyboard() {
+  const container = document.getElementById("piano-keys");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const whiteKeys = [];
+  const blackKeys = [];
+
+  // 1. オクターブ0 (A0, A#0, B0)
+  whiteKeys.push({ note: "A0", octave: 0, name: "ラ", index: 0, isC: false });
+  blackKeys.push({ note: "A#0", octave: 0, name: "ラ#", leftWhiteIndex: 0 });
+  whiteKeys.push({ note: "B0", octave: 0, name: "シ", index: 1, isC: false });
+
+  // 2. オクターブ 1〜7 (各7白鍵、5黒鍵 = 計84音)
+  const whiteNotes = ["C", "D", "E", "F", "G", "A", "B"];
+  const whiteNames = ["ド", "レ", "ミ", "ファ", "ソ", "ラ", "シ"];
+  const hasBlackRight = [true, true, false, true, true, true, false];
+
+  for (let oct = 1; oct <= 7; oct++) {
+    for (let i = 0; i < 7; i++) {
+      const wIndex = whiteKeys.length;
+      const isC = whiteNotes[i] === "C";
+      const noteName = `${whiteNotes[i]}${oct}`;
+      whiteKeys.push({
+        note: noteName,
+        octave: oct,
+        name: whiteNames[i],
+        index: wIndex,
+        isC
+      });
+
+      if (hasBlackRight[i]) {
+        const bNoteName = `${whiteNotes[i]}#${oct}`;
+        blackKeys.push({
+          note: bNoteName,
+          octave: oct,
+          name: `${whiteNames[i]}#`,
+          leftWhiteIndex: wIndex
+        });
+      }
+    }
+  }
+
+  // 3. オクターブ8 (C8)
+  whiteKeys.push({ note: "C8", octave: 8, name: "ド", index: whiteKeys.length, isC: true });
+
+  const totalWhite = whiteKeys.length; // 52鍵
+
+  // 白鍵DOM群の生成
+  whiteKeys.forEach((k) => {
+    const el = document.createElement("div");
+    el.className = `piano-key white${k.isC ? " c-key" : ""}`;
+    el.dataset.note = k.note;
+    el.dataset.name = k.name;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", k.note);
+
+    if (k.isC) {
+      const mark = document.createElement("span");
+      mark.className = "key-octave-mark";
+      mark.textContent = `C${k.octave}`;
+      el.appendChild(mark);
+    }
+    container.appendChild(el);
+  });
+
+  // 黒鍵DOM群の生成（白鍵52鍵に対する正確なパーセンテージ配置）
+  blackKeys.forEach((k) => {
+    const el = document.createElement("div");
+    el.className = "piano-key black";
+    el.dataset.note = k.note;
+    el.dataset.name = k.name;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", k.note);
+    el.style.left = `calc((100% / ${totalWhite}) * ${k.leftWhiteIndex + 1} - 0.64%)`;
+    container.appendChild(el);
+  });
+
+  // タッチ・クリックによる直接演奏インタラクションの登録
+  const allKeys = container.querySelectorAll(".piano-key");
+  allKeys.forEach((keyEl) => {
+    const note = keyEl.dataset.note;
+    if (!note) return;
+    keyEl.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      ensureAudioContext();
+      playTapSound(note, false);
+      highlightPianoKey(note, true);
+    });
+  });
+}
+
+/**
+ * ピアノ鍵盤の特定キーを発光・沈み込みハイライト（白黒ミニマル）
+ * @param {string} note 音名 ("C5", "D5", "E5" 等)
+ * @param {boolean} isHit 打鍵によるハイライトかどうか
+ */
+export function highlightPianoKey(note, isHit = true) {
+  if (!note) return;
+  const keyEl = document.querySelector(`.piano-key[data-note="${note}"]`);
+  if (!keyEl) return;
+
+  // 既存の解除タイマーをクリア
+  if (pianoKeyTimers.has(note)) {
+    clearTimeout(pianoKeyTimers.get(note));
+  }
+
+  // ヒットハイライトクラスを付与
+  keyEl.classList.add("key-hit");
+
+  // 220ms後に自然にフェードアウト解除
+  const timer = setTimeout(() => {
+    keyEl.classList.remove("key-hit");
+    pianoKeyTimers.delete(note);
+  }, 220);
+  pianoKeyTimers.set(note, timer);
+}
+
+/**
+ * すべての鍵盤の打鍵ハイライトを即座にリセット（指のリフト時など）
+ */
+export function clearAllKeyHits() {
+  pianoKeyTimers.forEach((timer) => clearTimeout(timer));
+  pianoKeyTimers.clear();
+  const hitKeys = document.querySelectorAll(".piano-key.key-hit");
+  hitKeys.forEach((el) => el.classList.remove("key-hit"));
+}
+
+/**
+ * 次に打鍵すべきターゲット鍵盤の案内ハイライト（白黒ミニマルパルス）を更新
+ * @param {string} targetNote 音名 ("C5", "E5" 等)
+ */
+export function updateTargetPianoKey(targetNote) {
+  const allKeys = document.querySelectorAll(".piano-key");
+  allKeys.forEach((el) => {
+    if (el.dataset.note === targetNote) {
+      el.classList.add("key-target");
+    } else {
+      el.classList.remove("key-target");
+    }
+  });
+}
+
+/**
+ * 右手運指ガイドウィジェットのハイライト更新
+ * @param {string} fingerKey "THUMB", "INDEX", "MIDDLE", "RING", "PINKY"
  * @param {number|string} fingerNum 1〜5
  * @param {string} note "ド", "レ", "ミ" 等
  */
@@ -985,6 +1138,9 @@ export function renderSongGuideUI() {
 
   // 画面右上：右手運指ガイドウィジェットのハイライト更新
   updateHandGuideWidget(currentItem.fingerKey, currentItem.fingerNum, currentItem.note);
+
+  // 画面下部：半透明ピアノ鍵盤のターゲット音ガイドハイライト更新
+  updateTargetPianoKey(currentItem.rightNote);
 
   if (targetFingerVal) {
     const fingerName = FINGER_NAMES[currentItem.fingerKey] || currentItem.fingerKey;
@@ -2612,9 +2768,14 @@ function drawRawHandLandmarks(results) {
       // 右手正解メロディ音を発音
       playTapSound(currentTarget.rightNote || currentTarget.freq, true);
 
+      // 半透明ピアノ鍵盤の打鍵ハイライト（指の打鍵と同時に正しい鍵を発光・沈み込み）
+      highlightPianoKey(currentTarget.rightNote, true);
+
       // 自動伴奏（autoLeftNote）が設定されている場合は即座に重ねて発音（プレイヤーの打鍵操作は不要）
       if (currentTarget.autoLeftNote) {
         playTapSound(currentTarget.autoLeftNote, false);
+        // 88鍵フルサイズ鍵盤上で低音伴奏キー（C3, G3等）も同時に白黒ミニマルハイライト！
+        highlightPianoKey(currentTarget.autoLeftNote, true);
       }
       updateStateHud("TOUCHED", true);
 
@@ -2655,6 +2816,7 @@ function drawRawHandLandmarks(results) {
     if (isLiftByPosition || isLiftByRebound) {
       tapState = "IDLE";
       updateStateHud("IDLE", false);
+      clearAllKeyHits();
     }
   }
 
@@ -3187,6 +3349,9 @@ if (audioStartBanner) {
     playTapSound("E5", false); // E5トーンで確認発音（よろこびのうた 第1音と同じ）
   });
 }
+
+// 画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤の動的生成と初期化
+init88KeyPianoKeyboard();
 
 // 初期ターゲット指（よろこびのうた 第1音: 中指 3 ミ）の設定と楽曲ガイドUIの描画
 setTargetFinger(currentSequence[0].fingerKey);

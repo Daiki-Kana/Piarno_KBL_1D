@@ -195,9 +195,13 @@ html, body {
 /* ==========================================================================
    右上固定：コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン）
    ========================================================================== */
+/* ==========================================================================
+   右上固定：コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン）
+   ※88鍵ピアノ鍵盤の直下に配置
+   ========================================================================== */
 .top-right-controls {
   position: absolute;
-  top: calc(16px + env(safe-area-inset-top, 0px));
+  top: calc(50px + env(safe-area-inset-top, 0px));
   right: calc(16px + env(safe-area-inset-right, 0px));
   z-index: 200;
   display: flex;
@@ -222,6 +226,149 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 215;
+}
+
+/* ==========================================================================
+   画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤
+   ========================================================================== */
+.piano-keyboard-container {
+  position: absolute;
+  top: calc(0px + env(safe-area-inset-top, 0px));
+  left: 0;
+  width: 100vw;
+  height: 44px;
+  z-index: 220;
+  display: flex;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.8);
+  box-sizing: border-box;
+}
+
+.piano-keyboard-glass {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  box-sizing: border-box;
+}
+
+.piano-keys {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  box-sizing: border-box;
+}
+
+/* 白鍵（52鍵） - 白黒ミニマル */
+.piano-key.white {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.22);
+  border-right: 1px solid rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding-bottom: 2px;
+  box-sizing: border-box;
+  transition: background 0.08s ease, transform 0.06s ease;
+  z-index: 1;
+}
+
+.piano-key.white:first-child {
+  border-left: 1px solid rgba(0, 0, 0, 0.45);
+}
+
+.piano-key.white:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+/* 黒鍵（36鍵） - 漆黒ミニマル */
+.piano-key.black {
+  position: absolute;
+  width: 1.28%;
+  height: 60%;
+  top: 0;
+  z-index: 3;
+  background: #111111;
+  border: 0.5px solid rgba(255, 255, 255, 0.25);
+  border-top: none;
+  border-radius: 0 0 1.5px 1.5px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
+  transition: background 0.08s ease, transform 0.06s ease;
+  box-sizing: border-box;
+}
+
+.piano-key.black:hover {
+  background: #2a2a2a;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+/* C鍵のミニマル目印ラベル */
+.piano-key.white.c-key .key-octave-mark {
+  position: absolute;
+  bottom: 2px;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+}
+
+/* 次打鍵ターゲットガイド（白黒ミニマルパルス） */
+@keyframes keyTargetMinimalPulse {
+  0%, 100% {
+    background: rgba(255, 255, 255, 0.48);
+    box-shadow: inset 0 -2px 0 #ffffff;
+  }
+  50% {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: inset 0 -3px 0 #ffffff, 0 0 8px rgba(255, 255, 255, 0.8);
+  }
+}
+
+.piano-key.white.key-target {
+  animation: keyTargetMinimalPulse 1.6s infinite ease-in-out;
+}
+
+.piano-key.black.key-target {
+  background: #555555;
+  border-color: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+}
+
+/* 打鍵ヒット時の強力ハイライト（白黒反転・完全純白発光！） */
+.piano-key.white.key-hit,
+.piano-key.white:active {
+  background: #ffffff !important;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 1.0), 0 0 28px rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(1.5px);
+  z-index: 2;
+}
+
+.piano-key.white.key-hit .key-octave-mark,
+.piano-key.white:active .key-octave-mark {
+  color: #000000 !important;
+}
+
+.piano-key.black.key-hit,
+.piano-key.black:active {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 1.0), 0 0 28px rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(1.5px);
+  z-index: 4;
 }
 
 /* ==========================================================================
@@ -498,7 +645,7 @@ html, body {
    ========================================================================== */
 .song-progress-badge {
   position: absolute;
-  top: 16px;
+  top: calc(52px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(20, 20, 20, 0.85);
