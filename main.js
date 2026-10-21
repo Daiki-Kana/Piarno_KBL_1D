@@ -73,9 +73,9 @@ function checkDebugPanelVisibility() {
 checkDebugPanelVisibility();
 window.addEventListener("resize", checkDebugPanelVisibility);
 
-// トラッキングライン（骨格線・指先マーカー）の表示フラグ（デフォルト非表示・localStorageで状態保存）
+// トラッキングライン（骨格線・指先マーカー）の表示フラグ（デフォルト表示・localStorageで状態保存）
 export const TRACKING_LINES_STORAGE_KEY = "piarno_show_tracking_lines";
-export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) === "true";
+export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) !== "false";
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
