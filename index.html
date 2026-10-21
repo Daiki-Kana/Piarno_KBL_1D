@@ -96,6 +96,27 @@
           </svg>
         </button>
 
+        <!-- 画面録画（画面収録）ガイドボタン -->
+        <button id="screen-record-help-btn" class="ctrl-circle-btn record-help-btn" aria-label="画面録画ガイド" title="iPhone画面録画で音を入れるコツ">
+          <svg viewBox="0 0 24 24" class="btn-icon" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+          </svg>
+        </button>
+
+        <!-- アプリ内ワンタップ高音質録画ボタン（コントロールセンター不要・直接動画保存） -->
+        <button id="inapp-record-btn" class="ctrl-circle-btn inapp-record-btn" aria-label="録画開始/停止" title="演奏を直接録画して高音質動画を保存">
+          <svg viewBox="0 0 24 24" class="btn-icon record-idle-icon" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="12" cy="12" r="4.5" fill="#ff3b30"/>
+          </svg>
+          <svg viewBox="0 0 24 24" class="btn-icon record-active-icon hidden" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="#ff3b30" stroke-width="1.8"/>
+            <rect x="8" y="8" width="8" height="8" rx="1.5" fill="#ff3b30"/>
+          </svg>
+          <span id="record-time-badge" class="record-time-badge hidden">0:00</span>
+        </button>
+
         <!-- 楽曲選択丸ボタン＆ポップアップメニュー -->
         <div class="song-select-container">
           <button id="song-select-btn" class="ctrl-circle-btn song-select-btn" aria-label="楽曲選択" title="楽曲選択">♪</button>
@@ -131,8 +152,8 @@
         <div id="countdown-text" class="countdown-text">3</div>
       </div>
 
-      <!-- iOS/WebKit用：オーディオセッションをPlayback（システム主音量）に昇格させる無音オーディオ -->
-      <audio id="silent-audio-unlock" loop playsinline preload="auto" src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA" style="display: none;"></audio>
+      <!-- iOS/WebKit用：オーディオセッションをPlayback（システム主音量・画面収録対象）に常時維持する無音オーディオ（48kHzクリーン音源） -->
+      <audio id="silent-audio-unlock" loop playsinline preload="auto" style="display: none;"></audio>
 
       <!-- 画面最上部：3オクターブ 全幅半透明ミニマル鍵盤 (C3〜C6 / スクエア・テキストなし) -->
       <div id="piano-keyboard" class="piano-keyboard" role="presentation" aria-hidden="true">
@@ -235,11 +256,51 @@
             🎬 デモ動画を選択して合成再生
           </label>
           <div class="start-hint">
+            ※iPhone画面録画で音を録るには、本体の消音モード（マナーモード）をOFFにし、端末音量を上げてください（マイク：オフ推奨）<br />
             ※iPadで画面が勝手にズームする場合は、コントロールセンターからセンターステージをOFFにしてください
           </div>
         </div>
       </div>
 
+
+      <!-- iPhone画面録画（画面収録）ガイドモーダル（白黒ミニマル） -->
+      <div id="screen-record-modal" class="screen-record-modal hidden" role="dialog" aria-modal="true" aria-labelledby="screen-record-title">
+        <div class="screen-record-card">
+          <div class="screen-record-badge">SCREEN RECORDING GUIDE</div>
+          <div id="screen-record-title" class="screen-record-title">iPhone画面録画でクリアに音を入れる設定</div>
+          <div class="screen-record-body">
+            <div class="record-step">
+              <span class="record-step-num">1</span>
+              <div class="record-step-desc">
+                <strong>本体の消音モード（マナーモード）をOFFにする</strong>
+                <p>iPhone側面のスイッチ等で消音を解除（オレンジが見えない状態）にし、本体音量を50〜70%に上げてください。※消音モード中はiOSの仕様で録画に音が入りません。</p>
+              </div>
+            </div>
+            <div class="record-step">
+              <span class="record-step-num">2</span>
+              <div class="record-step-desc">
+                <strong>コントロールセンターの「画面収録」を長押し →「マイク：オフ」</strong>
+                <p>「マイク：オフ」に設定してください。アプリ内部のピアノ音だけが最高音質でクリアに収録されます。（※マイクをONにすると、スピーカーの音が割れてガビガビになる原因になります）。</p>
+              </div>
+            </div>
+            <div class="record-step">
+              <span class="record-step-num">3</span>
+              <div class="record-step-desc">
+                <strong>アプリに戻ったら「画面を1回タップ」して演奏開始</strong>
+                <p><strong>【最重要】</strong>コントロールセンターを開くとiOSの安全制限で音声が一時停止します。<strong>アプリに戻ったら画面を1度タップ</strong>するとサウンドが即時再開され、動画に音が入ります。</p>
+              </div>
+            </div>
+            <div class="record-step record-step-rec">
+              <span class="record-step-num">★</span>
+              <div class="record-step-desc">
+                <strong>右上の「🔴 録画」ボタンなら設定不要で直接保存！</strong>
+                <p>画面右上の赤丸ボタンをタップすれば、コントロールセンター不要で高音質ピアノ音入りの動画を直接保存できます（おすすめ）。</p>
+              </div>
+            </div>
+          </div>
+          <button id="screen-record-close-btn" class="screen-record-btn">閉じる</button>
+        </div>
+      </div>
 
       <!-- タップ起動フォールバック（Autoplay Policy対策・白黒ミニマル） -->
       <div id="camera-tap-prompt" class="camera-tap-prompt hidden">

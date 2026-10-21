@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 100" width="1920" height="100" fill="none">
+  <defs>
+    <!-- 全体下部のシャドウ効果 -->
+    <filter id="keyboardShadow" x="-5%" y="0%" width="110%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+    <!-- 黒鍵のシャドウ効果 -->
+    <filter id="blackKeyShadow" x="-20%" y="-10%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+  </defs>
+
+  <!-- 全体シャドウ適用グループ -->
+  <g filter="url(#keyboardShadow)">
+    <!-- 鍵盤全体の背後ギャップ用下地 (rgba(0, 0, 0, 0.25)) -->
+    <rect x="0" y="0" width="1920" height="100" fill="rgba(0, 0, 0, 0.25)" />
+
+    <!-- 白鍵 (22鍵) -->
+    <!-- 白鍵 1 -->
+    <rect x="0.00" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 2 -->
+    <rect x="87.27" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 3 -->
+    <rect x="174.55" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 4 -->
+    <rect x="261.82" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 5 -->
+    <rect x="349.09" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 6 -->
+    <rect x="436.36" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 7 -->
+    <rect x="523.64" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 8 -->
+    <rect x="610.91" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 9 -->
+    <rect x="698.18" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 10 -->
+    <rect x="785.45" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 11 -->
+    <rect x="872.73" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 12 -->
+    <rect x="960.00" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 13 -->
+    <rect x="1047.27" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 14 -->
+    <rect x="1134.55" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 15 -->
+    <rect x="1221.82" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 16 -->
+    <rect x="1309.09" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 17 -->
+    <rect x="1396.36" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 18 -->
+    <rect x="1483.64" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 19 -->
+    <rect x="1570.91" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 20 -->
+    <rect x="1658.18" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 21 -->
+    <rect x="1745.45" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+    <!-- 白鍵 22 -->
+    <rect x="1832.73" y="0" width="86.27" height="100" fill="rgba(255, 255, 255, 0.42)" />
+
+    <!-- 黒鍵 (15鍵) -->
+    <!-- 黒鍵 白鍵境界 1 -->
+    <rect x="60.39" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 2 -->
+    <rect x="147.67" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 4 -->
+    <rect x="322.21" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 5 -->
+    <rect x="409.48" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 6 -->
+    <rect x="496.76" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 8 -->
+    <rect x="671.30" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 9 -->
+    <rect x="758.57" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 11 -->
+    <rect x="933.12" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 12 -->
+    <rect x="1020.39" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 13 -->
+    <rect x="1107.67" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 15 -->
+    <rect x="1282.21" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 16 -->
+    <rect x="1369.48" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 18 -->
+    <rect x="1544.03" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 19 -->
+    <rect x="1631.30" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+    <!-- 黒鍵 白鍵境界 20 -->
+    <rect x="1718.57" y="0" width="53.76" height="60.00" fill="rgba(16, 16, 16, 0.82)" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1" filter="url(#blackKeyShadow)" />
+
+    <!-- 下部境界線 (border-bottom: 1px solid rgba(255, 255, 255, 0.2)) -->
+    <line x1="0" y1="99.5" x2="1920" y2="99.5" stroke="rgba(255, 255, 255, 0.2)" stroke-width="1" />
+  </g>
+</svg>

@@ -167,29 +167,68 @@ html, body {
 }
 
 
-/* 初回オーディオ開始バナー */
+/* 初回オーディオ開始＆コントロールセンター復帰用バナー */
 .audio-start-banner {
   position: absolute;
-  top: 10px;
+  top: calc(54px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: #ffffff;
   color: #000000;
-  padding: 5px 16px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: bold;
-  z-index: 300;
+  padding: 8px 20px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 350;
   cursor: pointer;
-  box-shadow: 0 2px 14px rgba(255, 255, 255, 0.35);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 16px rgba(255, 255, 255, 0.6);
+  transition: opacity 0.25s ease, transform 0.25s ease;
   pointer-events: auto;
   user-select: none;
+  animation: pulse-audio-banner 1.8s infinite ease-in-out;
+}
+@keyframes pulse-audio-banner {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.05); box-shadow: 0 4px 24px rgba(255, 255, 255, 0.9); }
 }
 .audio-start-banner.hidden {
   opacity: 0;
-  transform: translateX(-50%) translateY(-12px);
+  transform: translateX(-50%) translateY(-14px) scale(0.95);
   pointer-events: none;
+}
+
+/* アプリ内直接録画ボタン */
+.inapp-record-btn {
+  position: relative;
+  transition: transform 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.inapp-record-btn.recording {
+  border-color: #ff3b30 !important;
+  background-color: rgba(255, 59, 48, 0.15) !important;
+  animation: record-btn-pulse 1.2s infinite ease-in-out;
+}
+@keyframes record-btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 59, 48, 0); }
+}
+.record-time-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background-color: #ff3b30;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.record-step-rec {
+  background-color: rgba(255, 59, 48, 0.08);
+  border: 1px solid rgba(255, 59, 48, 0.3);
 }
 
 /* ==========================================================================
@@ -1248,5 +1287,131 @@ html, body {
   color: #ffffff;
   letter-spacing: 1px;
 }
+
+/* ==========================================================================
+   iPhone 画面録画（画面収録）ガイドモーダル＆ボタン
+   ========================================================================== */
+.record-help-btn {
+  color: #ff5252;
+}
+
+.record-help-btn:hover {
+  color: #ff7b7b;
+  box-shadow: 0 0 10px rgba(255, 82, 82, 0.4);
+}
+
+.screen-record-modal {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 450;
+  padding: 20px;
+}
+
+.screen-record-card {
+  background-color: #111111;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  max-width: 440px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.screen-record-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #000000;
+  background-color: #ff5252;
+  padding: 2px 8px;
+  border-radius: 2px;
+  margin-bottom: 12px;
+}
+
+.screen-record-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 16px;
+  letter-spacing: 0.5px;
+}
+
+.screen-record-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.record-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.record-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.record-step-desc {
+  flex: 1;
+}
+
+.record-step-desc strong {
+  display: block;
+  font-size: 13px;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.record-step-desc p {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #aaaaaa;
+  margin: 0;
+}
+
+.screen-record-btn {
+  width: 100%;
+  padding: 10px;
+  background-color: #ffffff;
+  color: #000000;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.screen-record-btn:hover {
+  opacity: 0.85;
+}
+
 
 

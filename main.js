@@ -60,6 +60,15 @@ const pianoKeyboard = document.getElementById("piano-keyboard");
 const pianoKeys = pianoKeyboard ? pianoKeyboard.querySelectorAll(".key") : [];
 // iOS/WebKit用：システム主音量（Playback）セッション昇格用オーディオ
 const silentAudio = document.getElementById("silent-audio-unlock");
+// iOS画面収録用：Web Audioの演奏音をHTMLメディアとしてCoreAudio内部録音ミキサーに流すブリッジ
+// 画面録画用の二重再生オーディオブリッジはエコー防止のため撤去
+// 画面録画（画面収録）ガイドボタン＆モーダル
+const screenRecordHelpBtn = document.getElementById("screen-record-help-btn");
+const screenRecordModal = document.getElementById("screen-record-modal");
+const screenRecordCloseBtn = document.getElementById("screen-record-close-btn");
+// アプリ内直接録画ボタン＆時間表示バッジ
+const inappRecordBtn = document.getElementById("inapp-record-btn");
+const recordTimeBadge = document.getElementById("record-time-badge");
 
 // デバッグHUDの表示状態フラグ（非表示時は毎フレームのDOM書き込み・文字列演算をスキップ）
 let isDebugPanelVisible = false;
@@ -176,8 +185,9 @@ function initPianoSampler() {
     // 余韻づくり：ピアノ → ホール残響（Reverb） → 音割れ防止＆音圧調整（Compressor/Limiter） → 出力
     const reverb = new Tone.Reverb({ decay: 2.8, preDelay: 0.012, wet: 0.24 });
     const compressor = new Tone.Compressor({ threshold: -18, ratio: 2.5, attack: 0.01, release: 0.25 });
-    const limiter = new Tone.Limiter(-1);
+    const limiter = new Tone.Limiter(-1.5);
     pianoSampler.chain(reverb, compressor, limiter, Tone.getDestination());
+    Tone.getDestination().volume.value = -3.0;
   } catch (err) {
     console.warn("[AUDIO] Tone.Sampler 初期化エラー:", err);
   }
@@ -234,9 +244,122 @@ export async function releaseWakeLock() {
 }
 
 /**
+ * iOS/WebKit用：オーディオセッションをPlayback（システム主音量・メディア音量）に昇格させる完全無音オーディオ
+ * iOS標準サンプリングレート（48,000Hz 16-bit ステレオ）の完全無音WAVをメモリ生成し、
+ * 8kHz等の低品質ファイルによるCoreAudioのリサンプリング破綻（クラックル・ガビガビノイズ）を根絶します。
+ */
+let isCleanSilentAudioReady = false;
+export function initCleanSilentAudio() {
+  if (!silentAudio || isCleanSilentAudioReady) return;
+  try {
+    const sampleRate = 48000;
+    const numFrames = 4800; // 0.1秒
+    const buffer = new ArrayBuffer(44 + numFrames * 4);
+    const view = new DataView(buffer);
+    // RIFF chunk
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + numFrames * 4, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    // fmt chunk
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 2, true); // 2 channels (Stereo)
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 4, true); // Byte rate
+    view.setUint16(32, 4, true); // Block align
+    view.setUint16(34, 16, true); // Bits per sample
+    // data chunk
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, numFrames * 4, true);
+    // データ部は全ゼロ（完全無音）
+    const blob = new Blob([buffer], { type: "audio/wav" });
+    silentAudio.src = URL.createObjectURL(blob);
+    isCleanSilentAudioReady = true;
+    console.log("[AUDIO] 48kHzクリーン無音オーディオを準備完了");
+  } catch (err) {
+    console.warn("[AUDIO] クリーン無音オーディオ生成スキップ:", err);
+  }
+}
+
+/**
+ * 互換用：旧画面収録オーディオブリッジ初期化関数
+ * 二重再生によるコムフィルタ（位相干渉・ガビガビ歪み）防止のため、
+ * 音声ストリームのaudio二重再生を廃止し、クリーン無音オーディオのみ初期化します。
+ */
+/**
+ * iOS 17+ 画面収録/メディア再生ラインへの昇格（navigator.audioSession）
+ * デフォルトの "ambient"（消音スイッチで録画から除外される通話ライン）を
+ * "playback"（システムの画面収録がキャプチャする高音質メディアライン）へ強制設定
+ */
+export function configureAudioSession() {
+  if (typeof navigator !== "undefined" && "audioSession" in navigator) {
+    try {
+      navigator.audioSession.type = "playback";
+      console.log("[AUDIO] navigator.audioSession.type = 'playback' 設定完了");
+    } catch (e) {
+      console.warn("[AUDIO] audioSession 設定スキップ:", e);
+    }
+  }
+}
+configureAudioSession();
+
+/**
+ * コントロールセンター復帰時等でサスペンドした音声を画面タップで即時再開させるプロンプト
+ */
+let isResumeListenerAttached = false;
+export function showAudioResumePrompt() {
+  const banner = document.getElementById("audio-start-banner");
+  if (banner) {
+    const span = banner.querySelector("span");
+    if (span) span.textContent = "♪ 画面をタップしてサウンド再開";
+    banner.classList.remove("hidden");
+  }
+
+  if (isResumeListenerAttached) return;
+  isResumeListenerAttached = true;
+
+  const onUserTapResume = async () => {
+    configureAudioSession();
+    try {
+      if (Tone && Tone.context && (Tone.context.state === "suspended" || Tone.context.state === "interrupted")) {
+        await Tone.context.resume();
+      }
+      const rawCtx = Tone.getContext().rawContext;
+      if (rawCtx && (rawCtx.state === "suspended" || rawCtx.state === "interrupted")) {
+        await rawCtx.resume();
+      }
+      if (silentAudio && silentAudio.paused) {
+        silentAudio.play().catch(() => {});
+      }
+      console.log("[AUDIO] ユーザー画面タップにより音声を完全再開しました");
+      const b = document.getElementById("audio-start-banner");
+      if (b) b.classList.add("hidden");
+    } catch (err) {
+      console.warn("[AUDIO] 画面タップ音声再開エラー:", err);
+    } finally {
+      window.removeEventListener("touchstart", onUserTapResume, true);
+      window.removeEventListener("pointerdown", onUserTapResume, true);
+      window.removeEventListener("click", onUserTapResume, true);
+      isResumeListenerAttached = false;
+    }
+  };
+
+  window.addEventListener("touchstart", onUserTapResume, { capture: true, passive: false });
+  window.addEventListener("pointerdown", onUserTapResume, { capture: true });
+  window.addEventListener("click", onUserTapResume, { capture: true });
+}
+
+export function initRecordingAudioBridge() {
+  configureAudioSession();
+  initCleanSilentAudio();
+}
+
+/**
  * AudioContextの初期化・再開（ブラウザのAutoplay PolicyおよびiOS Safariのサスペンド・interrupted対応）
  */
 export function ensureAudioContext() {
+  configureAudioSession();
   if (Tone.context.state !== "running") {
     Tone.start().catch((err) => {
       console.warn("[AUDIO] Tone.start エラー:", err);
@@ -252,6 +375,7 @@ export function ensureAudioContext() {
 
   // iOS Safari/WebKit用：オーディオセッションをPlayback（システム主音量・メディア音量）に昇格
   // これにより通知音量ではなく端末のシステム主音量（メディアボリューム）側でピアノが鳴るようになります
+  initCleanSilentAudio();
   if (silentAudio && silentAudio.paused) {
     silentAudio.play().catch(() => {});
   }
@@ -3623,9 +3747,10 @@ renderSongGuideUI();
   }, { passive: false });
 });
 
-// 2. バックグラウンドからの復帰時（タブ切り替え・画面ロック解除・pageshow）の安定化
-// AudioContextのサスペンド復帰およびScreen Wake Lockの再要求
+// 2. バックグラウンドからの復帰時（コントロールセンター開閉・画面収録開始・タブ切り替え・pageshow）の安定化
+// AudioContextのサスペンド復帰、録音用オーディオ要素の再開、Screen Wake Lockの再要求
 async function handleResumeAudioAndWakeLock() {
+  configureAudioSession();
   try {
     if (Tone && Tone.context && (Tone.context.state === "suspended" || Tone.context.state === "interrupted")) {
       await Tone.context.resume();
@@ -3636,8 +3761,17 @@ async function handleResumeAudioAndWakeLock() {
       await rawCtx.resume();
       console.log("[AUDIO] 復帰ハンドラ: raw AudioContext を再開しました");
     }
+    if (silentAudio && silentAudio.paused) {
+      silentAudio.play().catch(() => {});
+    }
   } catch (err) {
     console.warn("[AUDIO] 復帰時のAudioContext再開エラー:", err);
+  }
+
+  // iOS Safari の Autoplay Policy により再開が保留された場合はワンタップ復帰バナーを表示
+  const rawCtx = Tone.getContext().rawContext;
+  if (!rawCtx || rawCtx.state !== "running" || Tone.context.state !== "running") {
+    showAudioResumePrompt();
   }
 
   // カメラ推論・演奏中であれば画面スリープ防止（Wake Lock）を安全に再要求
@@ -3646,12 +3780,14 @@ async function handleResumeAudioAndWakeLock() {
   }
 }
 
-// タブ表示切り替えイベント（戻ってきた時に再開）
+// タブ表示切り替え・ウィンドウフォーカス・pageshow復帰イベント（画面収録開始からの復帰を即時捕捉）
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     handleResumeAudioAndWakeLock();
   }
 });
+window.addEventListener("focus", handleResumeAudioAndWakeLock);
+window.addEventListener("pageshow", handleResumeAudioAndWakeLock);
 
 // ==========================================================================
 // デモ動画ファイル読み込み ＆ 鍵盤合成制御（プレゼン動画作成用）
@@ -4055,5 +4191,218 @@ window.addEventListener("drop", (e) => {
   }
 });
 
+// ==========================================================================
+// iPhone 画面録画（画面収録）ガイドモーダル制御
+// ==========================================================================
+if (screenRecordHelpBtn && screenRecordModal) {
+  screenRecordHelpBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    screenRecordModal.classList.remove("hidden");
+  });
+}
+
+if (screenRecordCloseBtn && screenRecordModal) {
+  screenRecordCloseBtn.addEventListener("click", () => {
+    screenRecordModal.classList.add("hidden");
+  });
+}
+
+if (screenRecordModal) {
+  screenRecordModal.addEventListener("click", (e) => {
+    if (e.target === screenRecordModal) {
+      screenRecordModal.classList.add("hidden");
+    }
+  });
+}
 
 
+// ==========================================================================
+// アプリ内ワンタップ高音質録画＆動画保存機能（MediaRecorder）
+// コントロールセンターやiOS画面収録の制限に依存せず、ピアノ音＋映像を100%直接記録
+// ==========================================================================
+let mediaRecorderInstance = null;
+let recordedBlobs = [];
+let recordTimer = null;
+let recordDurationSec = 0;
+let directAudioDestination = null;
+
+function getOptimalVideoMimeType() {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4;codecs=avc1,mp4a.40.2",
+    "video/mp4",
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm"
+  ];
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c)) {
+      return c;
+    }
+  }
+  return "";
+}
+
+function updateRecordTimerUI() {
+  if (!recordTimeBadge) return;
+  const m = Math.floor(recordDurationSec / 60);
+  const s = recordDurationSec % 60;
+  recordTimeBadge.textContent = `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+export function startInAppRecording() {
+  if (mediaRecorderInstance && mediaRecorderInstance.state === "recording") {
+    return;
+  }
+
+  ensureAudioContext();
+
+  const outCanvas = document.getElementById("output-canvas");
+  if (!outCanvas) {
+    alert("録画対象のCanvasが見つかりません。");
+    return;
+  }
+
+  let canvasStream = null;
+  try {
+    canvasStream = outCanvas.captureStream ? outCanvas.captureStream(30) : (outCanvas.mozCaptureStream ? outCanvas.mozCaptureStream(30) : null);
+  } catch (e) {
+    console.error("[REC] Canvas captureStream エラー:", e);
+  }
+
+  if (!canvasStream) {
+    alert("このブラウザはCanvasの直接録画に対応していません。通常の画面収録をご利用ください。");
+    return;
+  }
+
+  // Tone.js の音声をデジタル直接結合
+  try {
+    const rawCtx = Tone.getContext().rawContext;
+    if (rawCtx && rawCtx.createMediaStreamDestination) {
+      if (!directAudioDestination) {
+        directAudioDestination = rawCtx.createMediaStreamDestination();
+        Tone.getDestination().connect(directAudioDestination);
+      }
+      const audioTracks = directAudioDestination.stream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        canvasStream.addTrack(audioTracks[0]);
+        console.log("[REC] 高音質Web Audioトラックを合成完了");
+      }
+    }
+  } catch (err) {
+    console.warn("[REC] オーディオトラック結合スキップ:", err);
+  }
+
+  const mimeType = getOptimalVideoMimeType();
+  const options = mimeType ? { mimeType, videoBitsPerSecond: 2500000 } : {};
+
+  try {
+    mediaRecorderInstance = new MediaRecorder(canvasStream, options);
+  } catch (err) {
+    console.error("[REC] MediaRecorder 作成エラー:", err);
+    alert("録画の開始に失敗しました: " + err.message);
+    return;
+  }
+
+  recordedBlobs = [];
+  mediaRecorderInstance.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      recordedBlobs.push(event.data);
+    }
+  };
+
+  mediaRecorderInstance.onstop = async () => {
+    clearInterval(recordTimer);
+    recordTimer = null;
+    recordDurationSec = 0;
+
+    if (inappRecordBtn) {
+      inappRecordBtn.classList.remove("recording");
+      const idleIcon = inappRecordBtn.querySelector(".record-idle-icon");
+      const activeIcon = inappRecordBtn.querySelector(".record-active-icon");
+      if (idleIcon) idleIcon.classList.remove("hidden");
+      if (activeIcon) activeIcon.classList.add("hidden");
+      if (recordTimeBadge) recordTimeBadge.classList.add("hidden");
+    }
+
+    if (recordedBlobs.length === 0) {
+      console.warn("[REC] 録画データが空です");
+      return;
+    }
+
+    const actualMime = mediaRecorderInstance.mimeType || mimeType || "video/mp4";
+    const ext = actualMime.includes("mp4") ? "mp4" : "webm";
+    const videoBlob = new Blob(recordedBlobs, { type: actualMime });
+    const fileName = `piarno_recording_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+
+    // iOS Safari で Web Share API が使える場合は写真/ファイル保存メニューを直接呼び出し
+    const file = new File([videoBlob], fileName, { type: actualMime });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: "Piarno 演奏動画",
+          text: "Piarnoで録画した高音質演奏動画です"
+        });
+        return;
+      } catch (shareErr) {
+        if (shareErr.name !== "AbortError") {
+          console.warn("[REC] Web Share エラー、通常ダウンロードに切替:", shareErr);
+        }
+      }
+    }
+
+    // 通常のファイルダウンロード
+    const url = URL.createObjectURL(videoBlob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  };
+
+  mediaRecorderInstance.start(500); // 500ms chunk
+  console.log("[REC] 録画を開始しました:", mimeType);
+
+  if (inappRecordBtn) {
+    inappRecordBtn.classList.add("recording");
+    const idleIcon = inappRecordBtn.querySelector(".record-idle-icon");
+    const activeIcon = inappRecordBtn.querySelector(".record-active-icon");
+    if (idleIcon) idleIcon.classList.add("hidden");
+    if (activeIcon) activeIcon.classList.remove("hidden");
+    if (recordTimeBadge) {
+      recordTimeBadge.classList.remove("hidden");
+      recordDurationSec = 0;
+      updateRecordTimerUI();
+    }
+  }
+
+  recordTimer = setInterval(() => {
+    recordDurationSec++;
+    updateRecordTimerUI();
+  }, 1000);
+}
+
+export function stopInAppRecording() {
+  if (mediaRecorderInstance && mediaRecorderInstance.state === "recording") {
+    mediaRecorderInstance.stop();
+    console.log("[REC] 録画を停止しました");
+  }
+}
+
+if (inappRecordBtn) {
+  inappRecordBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (mediaRecorderInstance && mediaRecorderInstance.state === "recording") {
+      stopInAppRecording();
+    } else {
+      startInAppRecording();
+    }
+  });
+}
