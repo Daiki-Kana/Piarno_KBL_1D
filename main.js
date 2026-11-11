@@ -573,13 +573,21 @@ export const FINGER_CONFIGS = {
     hand: "右手",
     shortName: "親指",
     label: "右手 親指 (1: ド)",
+    rightNote: "C5",
+    note: "ド",
     freq: 523.25, // C5 (ド)
     baseIdx: 2,   // MCP (付け根)
     p1Idx: 1,     // CMC
     p2Idx: 2,     // MCP
     p3Idx: 3,     // IP
     tipIdx: 4,    // TIP
-    indices: [1, 2, 3, 4]
+    indices: [1, 2, 3, 4],
+    color: {
+      name: "coral",
+      stroke: "rgba(255, 82, 82, 0.95)",
+      halo: "rgba(255, 82, 82, 0.30)",
+      fill: "#ff5252"
+    }
   },
   INDEX: {
     fingerNum: 2,
@@ -587,13 +595,21 @@ export const FINGER_CONFIGS = {
     hand: "右手",
     shortName: "人差し指",
     label: "右手 人差し指 (2: レ)",
+    rightNote: "D5",
+    note: "レ",
     freq: 587.33, // D5 (レ)
     baseIdx: 5,   // MCP
     p1Idx: 5,     // MCP
     p2Idx: 6,     // PIP
     p3Idx: 7,     // DIP
     tipIdx: 8,    // TIP
-    indices: [5, 6, 7, 8]
+    indices: [5, 6, 7, 8],
+    color: {
+      name: "cyan",
+      stroke: "rgba(0, 229, 255, 0.95)",
+      halo: "rgba(0, 229, 255, 0.30)",
+      fill: "#00e5ff"
+    }
   },
   MIDDLE: {
     fingerNum: 3,
@@ -601,13 +617,21 @@ export const FINGER_CONFIGS = {
     hand: "右手",
     shortName: "中指",
     label: "右手 中指 (3: ミ)",
+    rightNote: "E5",
+    note: "ミ",
     freq: 659.25, // E5 (ミ)
     baseIdx: 9,   // MCP
     p1Idx: 9,     // MCP
     p2Idx: 10,    // PIP
     p3Idx: 11,    // DIP
     tipIdx: 12,   // TIP
-    indices: [9, 10, 11, 12]
+    indices: [9, 10, 11, 12],
+    color: {
+      name: "green",
+      stroke: "rgba(0, 230, 118, 0.95)",
+      halo: "rgba(0, 230, 118, 0.30)",
+      fill: "#00e676"
+    }
   },
   RING: {
     fingerNum: 4,
@@ -615,13 +639,21 @@ export const FINGER_CONFIGS = {
     hand: "右手",
     shortName: "薬指",
     label: "右手 薬指 (4: ファ)",
+    rightNote: "F5",
+    note: "ファ",
     freq: 698.46, // F5 (ファ)
     baseIdx: 13,  // MCP
     p1Idx: 13,    // MCP
     p2Idx: 14,    // PIP
     p3Idx: 15,    // DIP
     tipIdx: 16,   // TIP
-    indices: [13, 14, 15, 16]
+    indices: [13, 14, 15, 16],
+    color: {
+      name: "yellow",
+      stroke: "rgba(255, 214, 0, 0.95)",
+      halo: "rgba(255, 214, 0, 0.30)",
+      fill: "#ffd600"
+    }
   },
   PINKY: {
     fingerNum: 5,
@@ -629,13 +661,21 @@ export const FINGER_CONFIGS = {
     hand: "右手",
     shortName: "小指",
     label: "右手 小指 (5: ソ)",
+    rightNote: "G5",
+    note: "ソ",
     freq: 783.99, // G5 (ソ)
     baseIdx: 17,  // MCP
     p1Idx: 17,    // MCP
     p2Idx: 18,    // PIP
     p3Idx: 19,    // DIP
     tipIdx: 20,   // TIP
-    indices: [17, 18, 19, 20]
+    indices: [17, 18, 19, 20],
+    color: {
+      name: "magenta",
+      stroke: "rgba(224, 64, 251, 0.95)",
+      halo: "rgba(224, 64, 251, 0.30)",
+      fill: "#e040fb"
+    }
   }
 };
 
@@ -862,8 +902,14 @@ export const SAINTS_SEQUENCE = [
   { step: 42, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ド(高)",  rightNote: "C6", freq: 1046.50, beats: 2, autoChord: ["C3", "C4", "C5", "E5"], autoOffbeat: [] }
 ];
 
-// 演奏曲リスト（自分のペースで1音ずつ進めるステップ演奏）
+// 演奏曲リスト（自分のペースで1音ずつ進めるステップ演奏 ＆ 完全フリーセッション）
 export const SONGS = {
+  free_session: {
+    id: "free_session",
+    title: "フリーセッション (自由演奏)",
+    isFreeSession: true,
+    sequence: []
+  },
   ode_to_joy: {
     id: "ode_to_joy",
     title: "よろこびのうた",
@@ -890,10 +936,10 @@ export const SONGS = {
   }
 };
 
-export let currentSongId = "ode_to_joy";
-export let currentSequence = SONGS.ode_to_joy.sequence;
+export let currentSongId = "free_session";
+export let currentSequence = SONGS.free_session.sequence;
 export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
-export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指: MIDDLE (3: ミ)
+export let currentFingerKey = "MIDDLE"; // 初期基準指: MIDDLE (3: ミ)
 
 // ==========================================
 // 自動伴奏（和音・裏拍）の発音管理
@@ -1123,7 +1169,7 @@ export function selectSong(songId, withCountdown = true) {
   }
 
   currentSongId = canonicalId;
-  currentSequence = targetSong.sequence;
+  currentSequence = targetSong.sequence || [];
   currentSongStep = 0;
   resetAccompaniment();
   releaseAllNotes();
@@ -1148,8 +1194,16 @@ export function selectSong(songId, withCountdown = true) {
   const menu = document.getElementById("song-select-menu");
   if (menu) menu.classList.add("hidden");
 
+  if (targetSong.isFreeSession) {
+    renderSongGuideUI();
+    console.log("[FREE SESSION] 5本指完全フリーセッションモードに切り替えました");
+    return;
+  }
+
   // 1音目のターゲット指をセット＆ガイドUI再描画
-  setTargetFinger(currentSequence[0].fingerKey);
+  if (currentSequence.length > 0) {
+    setTargetFinger(currentSequence[0].fingerKey);
+  }
   renderSongGuideUI();
 
   if (withCountdown) {
@@ -1221,21 +1275,30 @@ export function updateCachedConnections(fingerKey) {
 // 手の大きさやカメラとの距離（拡大・縮小）に依存しないスケール不変な速度判定
 // 打鍵時は急峻な下降（3.0〜15.0 /s）が発生し、静止待機時（0〜0.1 /s）を確実に遮断
 export const FINGER_VY_THRESHOLDS = {
-  THUMB: 1.6,
-  INDEX: 2.2,
-  MIDDLE: 2.2,
-  RING: 1.8,
-  PINKY: 1.8
+  THUMB: 1.4,
+  INDEX: 1.8,
+  MIDDLE: 1.8,
+  RING: 1.6,
+  PINKY: 1.6
 };
 
 // 指ごとの学習閾値モデル
 // 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
 export const fingerThresholdModels = {
   THUMB: { hitRy: 0.35, liftRy: 0.28, samples: 0 },
-  MIDDLE: { hitRy: 0.60, liftRy: 0.52, samples: 0 },
-  RING: { hitRy: 0.55, liftRy: 0.48, samples: 0 },
-  PINKY: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
-  INDEX: { hitRy: 0.60, liftRy: 0.52, samples: 0 }
+  INDEX: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
+  MIDDLE: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
+  RING: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
+  PINKY: { hitRy: 0.45, liftRy: 0.38, samples: 0 }
+};
+
+// 5本指それぞれの独立打鍵ステート（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
+export const fingerTapStates = {
+  THUMB: "IDLE",
+  INDEX: "IDLE",
+  MIDDLE: "IDLE",
+  RING: "IDLE",
+  PINKY: "IDLE"
 };
 
 // 指ごとのデータセット格納用
@@ -1480,6 +1543,26 @@ export function flashPianoKey(noteName) {
  * 楽曲進行とターゲット指UIの更新
  */
 export function renderSongGuideUI() {
+  if (currentSongId === "free_session") {
+    if (targetFingerVal) {
+      targetFingerVal.textContent = "右手 1〜5 (フリーセッション: ド〜ソ)";
+    }
+    if (targetTapProgress) {
+      targetTapProgress.textContent = "FREE PLAY";
+    }
+    if (songProgressBadge) {
+      songProgressBadge.textContent = "FREE";
+    }
+    // ピアノ鍵盤：C5〜G5（ド・レ・ミ・ファ・ソ）の5鍵をガイドハイライト
+    if (pianoKeys && pianoKeys.length > 0) {
+      const freeNotes = ["C5", "D5", "E5", "F5", "G5"];
+      pianoKeys.forEach((key) => {
+        key.classList.toggle("is-target", freeNotes.includes(key.dataset.note));
+      });
+    }
+    return;
+  }
+
   const currentItem = currentSequence[currentSongStep];
   if (!currentItem) return;
 
@@ -1681,6 +1764,57 @@ export function triggerNoteHitEffect(stepIndex) {
       alpha: 1.0,
       decay: 0.035 + Math.random() * 0.02
     });
+  }
+}
+
+/**
+ * フリーセッション打鍵HIT時の光のパーティクル＆リングエフェクトを発生
+ * @param {string} fingerKey
+ */
+export function triggerFreeNoteHit(fingerKey) {
+  const cfg = FINGER_CONFIGS[fingerKey];
+  if (!cfg) return;
+  const targetPos = getGuideFingerScreenPos(fingerKey);
+  const color = cfg.color;
+
+  // 1. 弾けるリング（ショックウェーブ）
+  noteHitParticles.push({
+    type: "ring",
+    x: targetPos.x,
+    y: targetPos.y,
+    radius: 12,
+    maxRadius: 56,
+    color: color.stroke || "#00e5ff",
+    alpha: 1.0,
+    decay: 0.05
+  });
+
+  // 2. 放射状の光火花パーティクル
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+    const speed = 2.5 + Math.random() * 4.0;
+    noteHitParticles.push({
+      type: "spark",
+      x: targetPos.x,
+      y: targetPos.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 3 + Math.random() * 2.5,
+      color: color.fill || "#00e5ff",
+      alpha: 1.0,
+      decay: 0.035 + Math.random() * 0.02
+    });
+  }
+
+  // 右手運指ガイドウィジェットのハイライト更新＆ポップ
+  updateHandGuideWidget(fingerKey, cfg.fingerNum, cfg.note);
+  const handGuideWidget = document.getElementById("hand-guide-widget");
+  if (handGuideWidget) {
+    handGuideWidget.classList.add("hit-pop");
+    setTimeout(() => {
+      handGuideWidget.classList.remove("hit-pop");
+    }, 160);
   }
 }
 
@@ -2992,7 +3126,7 @@ function drawRawHandLandmarks(results) {
     // 3フレーム以内（約50ms）の一時的ロストであれば直前の平滑化座標で描画を維持し、画面の点滅・ジャンプを防止
     if (lostFrames <= MAX_LOST_FRAMES && hasValidSmoothedLandmarks) {
       // 直前フレームの平滑化座標でフィルターを現在タイムスタンプ（now）で空回し更新し、復帰時のdt拡大による速度微分スパイクを防止
-      for (const i of activeJointIndices) {
+      for (let i = 0; i < 21; i++) {
         const pt = smoothedLandmarksPool[i];
         landmarkFilters[i].filter(pt.x, pt.y, now, pt);
       }
@@ -3000,10 +3134,11 @@ function drawRawHandLandmarks(results) {
       if (isDebugPanelVisible) {
         handsCount.textContent = "0";
       }
-      if (tapState !== "IDLE") {
-        tapState = "IDLE";
-        updateStateHud("IDLE", false);
-      }
+      tapState = "IDLE";
+      ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"].forEach((k) => {
+        fingerTapStates[k] = "IDLE";
+      });
+      updateStateHud("IDLE", false);
       // 完全に画角から外れた場合のみフィルターと追従位置をリセット
       landmarkFilters.forEach((f) => f.reset());
       hasValidSmoothedLandmarks = false;
@@ -3033,21 +3168,16 @@ function drawRawHandLandmarks(results) {
   // 追従中の右手手首の生正規化座標で lastTrackedWrist を毎フレーム更新
   lastTrackedWrist = { x: landmarks[0].x, y: landmarks[0].y };
 
-  // 演奏・描画に必要な関節点のみ独立平滑化（全21点から5点に絞りフィルタ計算負荷を約76%削減）
+  // 全21関節点を独立適応平滑化（1 Euro Filter）
   if (hasHands) {
-    const isFingerChanged = lastFilteredFingerKey !== currentFingerKey;
-    const needSnap = isReacquired || isFingerChanged;
-
-    if (needSnap) {
-      // 画面外復帰または指切り替え初フレーム：過去の古い座標からの引きずりをバイパスし、新座標で即座にスナップ初期化
-      for (const i of activeJointIndices) {
+    if (isReacquired) {
+      for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
         landmarkFilters[i].snap(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
       }
       lastFilteredFingerKey = currentFingerKey;
     } else {
-      // 通常トラッキング時：適応平滑化（1 Euro Filter）
-      for (const i of activeJointIndices) {
+      for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
         landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
       }
@@ -3055,6 +3185,172 @@ function drawRawHandLandmarks(results) {
     hasValidSmoothedLandmarks = true;
   }
   const smoothedLandmarks = smoothedLandmarksPool;
+
+  const FINGER_KEY_LIST = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
+
+  // ==========================================================================
+  // 【完全フリーセッションモード】5本指同時・独立判定（ド〜ソ）
+  // ==========================================================================
+  if (currentSongId === "free_session") {
+    // 手首（0: Wrist）と中指付け根（9: Middle MCP）間の距離から手長基準スケールを算出
+    const smoothWrist = smoothedLandmarks[0];
+    const smoothMiddleMcp = smoothedLandmarks[9];
+    const baseDistPx = Math.hypot(smoothMiddleMcp.x - smoothWrist.x, smoothMiddleMcp.y - smoothWrist.y);
+    const safeBaseDistPx = Math.max(baseDistPx, height * 0.05);
+
+    const fingerMetrics = {};
+    for (const fKey of FINGER_KEY_LIST) {
+      const cfg = FINGER_CONFIGS[fKey];
+      const smoothP1 = smoothedLandmarks[cfg.p1Idx];
+      const smoothP2 = smoothedLandmarks[cfg.p2Idx];
+      const smoothP3 = smoothedLandmarks[cfg.p3Idx];
+      const smoothTip = smoothedLandmarks[cfg.tipIdx];
+      const smoothBase = (cfg.baseIdx === cfg.p1Idx) ? smoothP1 : smoothP2;
+
+      const ry = (smoothTip.y - smoothBase.y) / safeBaseDistPx;
+      const rawVy = landmarkFilters[cfg.tipIdx].getVelocityY();
+      const vy = rawVy / safeBaseDistPx;
+
+      const thModel = fingerThresholdModels[fKey] || { hitRy: 0.50, liftRy: 0.42 };
+      const vyTh = FINGER_VY_THRESHOLDS[fKey] || 1.8;
+
+      fingerMetrics[fKey] = {
+        fKey,
+        cfg,
+        ry,
+        vy,
+        hitRy: thModel.hitRy,
+        liftRy: thModel.liftRy,
+        vyTh,
+        smoothP1,
+        smoothP2,
+        smoothP3,
+        smoothTip
+      };
+    }
+
+    // 1. 各指のリフト（離鍵）復帰判定
+    for (const fKey of FINGER_KEY_LIST) {
+      if (fingerTapStates[fKey] === "TOUCHED") {
+        const m = fingerMetrics[fKey];
+        const isLiftByPos = m.ry <= m.liftRy;
+        const isLiftByRebound = m.vy <= -1.0 && m.ry <= (m.hitRy - 0.02);
+        if (isLiftByPos || isLiftByRebound) {
+          fingerTapStates[fKey] = "IDLE";
+        }
+      }
+    }
+
+    // 2. 打鍵（押鍵）判定（つられ下がり競合を抑制）
+    if (!isReacquired) {
+      const hitCandidates = [];
+      for (const fKey of FINGER_KEY_LIST) {
+        if (fingerTapStates[fKey] === "IDLE") {
+          const m = fingerMetrics[fKey];
+          if (m.ry >= m.hitRy && m.vy >= m.vyTh) {
+            // 勢いスコア：速度の超過度 × 1.5 + 変位の超過度
+            const score = (m.vy / m.vyTh) * 1.5 + (m.ry / m.hitRy);
+            hitCandidates.push({ ...m, score });
+          }
+        }
+      }
+
+      if (hitCandidates.length > 0) {
+        // 最も勢いよく打鍵された指を優先（つられ下がり誤爆を完全に除外）
+        hitCandidates.sort((a, b) => b.score - a.score);
+        const winner = hitCandidates[0];
+
+        fingerTapStates[winner.fKey] = "TOUCHED";
+
+        // メロディ発音
+        playTapSound(winner.cfg.rightNote, true, MELODY_VELOCITY, "melody");
+
+        // 画面上部ピアノ鍵盤のフラッシュ
+        flashPianoKey(winner.cfg.rightNote);
+
+        // パーティクル＆手ウィジェットポップ
+        triggerFreeNoteHit(winner.fKey);
+
+        // HUD更新
+        updateStateHud(`${winner.cfg.shortName} (${winner.cfg.note})`, true);
+
+        currentTip.x = winner.smoothTip.x;
+        currentTip.y = winner.smoothTip.y;
+        updateDebugMetrics(winner.smoothTip.x, winner.smoothTip.y, winner.ry, winner.vy);
+
+        console.log(
+          `[FREE HIT] ${winner.cfg.label}: ry=${winner.ry.toFixed(3)} >= TH:${winner.hitRy.toFixed(2)}, vy=${winner.vy.toFixed(2)} >= V_TH:${winner.vyTh.toFixed(1)}`
+        );
+      } else {
+        const defM = fingerMetrics[currentFingerKey] || fingerMetrics.MIDDLE;
+        currentTip.x = defM.smoothTip.x;
+        currentTip.y = defM.smoothTip.y;
+        updateDebugMetrics(defM.smoothTip.x, defM.smoothTip.y, defM.ry, defM.vy);
+      }
+    }
+
+    // 3. 全5本指の骨格描画（ネオンカラー＋音名ラベル）
+    if (showTrackingLines) {
+      canvasCtx.save();
+      canvasCtx.lineCap = "round";
+      canvasCtx.lineJoin = "round";
+
+      for (const fKey of FINGER_KEY_LIST) {
+        const m = fingerMetrics[fKey];
+        const color = m.cfg.color;
+        const isTouched = fingerTapStates[fKey] === "TOUCHED";
+
+        const drawBone = () => {
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(m.smoothP1.x, m.smoothP1.y);
+          canvasCtx.lineTo(m.smoothP2.x, m.smoothP2.y);
+          canvasCtx.lineTo(m.smoothP3.x, m.smoothP3.y);
+          canvasCtx.lineTo(m.smoothTip.x, m.smoothTip.y);
+        };
+
+        // ハロー発光ライン
+        canvasCtx.strokeStyle = isTouched ? color.fill : color.halo;
+        canvasCtx.lineWidth = isTouched ? 14.0 : 8.0;
+        drawBone();
+        canvasCtx.stroke();
+
+        // メインライン
+        canvasCtx.strokeStyle = isTouched ? "#ffffff" : color.stroke;
+        canvasCtx.lineWidth = isTouched ? 5.5 : 3.5;
+        drawBone();
+        canvasCtx.stroke();
+
+        // 関節ドット
+        [m.smoothP1, m.smoothP2, m.smoothP3].forEach((pt) => {
+          canvasCtx.beginPath();
+          canvasCtx.arc(pt.x, pt.y, isTouched ? 4.5 : 3.0, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = isTouched ? "#ffffff" : color.fill;
+          canvasCtx.fill();
+        });
+
+        // 先端マーカー
+        drawTipTargetMark(m.smoothTip.x, m.smoothTip.y, color);
+
+        // 指先の上に音名ラベル（ド、レ、ミ、ファ、ソ）を描画
+        canvasCtx.save();
+        canvasCtx.font = "bold 13px -apple-system, sans-serif";
+        canvasCtx.textAlign = "center";
+        canvasCtx.textBaseline = "bottom";
+        canvasCtx.fillStyle = isTouched ? "#ffffff" : color.fill;
+        canvasCtx.shadowColor = "rgba(0, 0, 0, 0.85)";
+        canvasCtx.shadowBlur = 4;
+        canvasCtx.fillText(m.cfg.note, m.smoothTip.x, m.smoothTip.y - 12);
+        canvasCtx.restore();
+      }
+
+      canvasCtx.restore();
+    }
+    return;
+  }
+
+  // ==========================================================================
+  // 【楽曲シーケンス演奏モード】単一ターゲット指ステップ演奏
+  // ==========================================================================
 
   // 1. 対象指以外の骨格・関節点描画は非表示（視覚ノイズ排除および描画負荷削減）
 
