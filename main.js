@@ -2343,7 +2343,7 @@ export async function loadTestDataCsv() {
 
 // 先行MediaPipeモデルロード用Promise
 let handLandmarkerPromise = null;
-let selectedStartSongId = "ode_to_joy";
+let selectedStartSongId = "free_session";
 
 /**
  * 初期化処理（アプリ内ブラウザ検知を先行）
@@ -2362,11 +2362,11 @@ async function init() {
 }
 
 /**
- * 起動前準備（モデル読込の先行開始と楽曲選択モーダルのセットアップ）
+ * 起動前準備（モデル読込の先行開始とフリーセッションモーダルのセットアップ）
  */
 function prepareApp() {
   resetDebugMetrics();
-  updateStatus("曲を選択してください");
+  updateStatus("セッションを開始してください");
 
   // テスト用CSVの非同期読み込み（未配置でもブロックせず実行）
   loadTestDataCsv();
@@ -2379,6 +2379,9 @@ function prepareApp() {
     });
   }
 
+  // 初期状態でフリーセッションUIをセット
+  selectSong("free_session", false);
+
   // 音声バナーは初期状態では隠す（スタートボタン押下で確実に有効化されるため）
   if (audioStartBanner) {
     audioStartBanner.classList.add("hidden");
@@ -2389,32 +2392,10 @@ function prepareApp() {
 }
 
 /**
- * 起動時楽曲選択モーダルのイベント登録
+ * 起動時フリーセッションモーダルのイベント登録
  */
 function setupStartModal() {
   if (!startModal) return;
-
-  const startSongItems = document.querySelectorAll(".start-song-item");
-  startSongItems.forEach((item) => {
-    item.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const songId = item.dataset.song;
-      if (!songId || !SONGS[songId]) return;
-
-      selectedStartSongId = songId;
-
-      // 選択状態のUI更新
-      startSongItems.forEach((btn) => {
-        const isSelected = btn.dataset.song === songId;
-        btn.classList.toggle("selected", isSelected);
-        const check = btn.querySelector(".start-song-check");
-        if (check) check.textContent = isSelected ? "●" : "○";
-      });
-
-      // ターゲット指やガイドUIも背景側で事前に反映しておく
-      selectSong(songId, false);
-    });
-  });
 
   if (startPlayBtn) {
     startPlayBtn.addEventListener("click", async (e) => {
@@ -2470,7 +2451,7 @@ async function handleStartPlay() {
   } catch (error) {
     console.error("起動エラー:", error);
     startPlayBtn.disabled = false;
-    if (startPlayText) startPlayText.textContent = "スタート";
+    if (startPlayText) startPlayText.textContent = "セッションを開始";
 
     // 自動再生制限による起動保留の場合は、白黒ミニマルなタップ起動プロンプトを表示
     if (error.name === "AutoplayBlockedError") {
