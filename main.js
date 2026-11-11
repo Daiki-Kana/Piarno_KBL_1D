@@ -1273,13 +1273,13 @@ export function updateCachedConnections(fingerKey) {
 
 // 指ごとの推奨正規化下降速度閾値（基準長/秒 = 手のひら長/秒）
 // 手の大きさやカメラとの距離（拡大・縮小）に依存しないスケール不変な速度判定
-// 打鍵時は急峻な下降（3.0〜15.0 /s）が発生し、静止待機時（0〜0.1 /s）を確実に遮断
+// 手首相殺（相対速度）導入に伴い、軽いタッチでも検知できるよう最適化
 export const FINGER_VY_THRESHOLDS = {
-  THUMB: 1.4,
-  INDEX: 1.8,
-  MIDDLE: 1.8,
-  RING: 1.6,
-  PINKY: 1.6
+  THUMB: 1.2,
+  INDEX: 1.4,
+  MIDDLE: 1.4,
+  RING: 1.3,
+  PINKY: 1.3
 };
 
 // 指ごとの学習閾値モデル
@@ -1300,6 +1300,10 @@ export const fingerTapStates = {
   RING: "IDLE",
   PINKY: "IDLE"
 };
+
+// フリーセッション用：全指打鍵ロックアウト（不応期）管理
+let lastGlobalHitTime = 0;
+const GLOBAL_HIT_COOLDOWN_MS = 100; // 打鍵後100msは全指の新規打鍵をブロック（連鎖誤爆防止）
 
 // 指ごとのデータセット格納用
 export const fingerDatasets = {
@@ -3179,6 +3183,9 @@ function drawRawHandLandmarks(results) {
     const baseDistPx = Math.hypot(smoothMiddleMcp.x - smoothWrist.x, smoothMiddleMcp.y - smoothWrist.y);
     const safeBaseDistPx = Math.max(baseDistPx, height * 0.05);
 
+    const now = performance.now();
+    const isGlobalCooldown = (now - lastGlobalHitTime) < GLOBAL_HIT_COOLDOWN_MS;
+
     const fingerMetrics = {};
     for (const fKey of FINGER_KEY_LIST) {
       const cfg = FINGER_CONFIGS[fKey];
@@ -3189,11 +3196,16 @@ function drawRawHandLandmarks(results) {
       const smoothBase = (cfg.baseIdx === cfg.p1Idx) ? smoothP1 : smoothP2;
 
       const ry = (smoothTip.y - smoothBase.y) / safeBaseDistPx;
-      const rawVy = landmarkFilters[cfg.tipIdx].getVelocityY();
-      const vy = rawVy / safeBaseDistPx;
+      const rawTipVy = landmarkFilters[cfg.tipIdx].getVelocityY();
+      const rawBaseVy = landmarkFilters[cfg.baseIdx].getVelocityY();
+
+      // 手首相殺（相対下降速度）：指先の絶対速度からベース関節（MCP）の速度を引き算
+      // 手首・手全体が下がっただけの動きを相殺し、指自体の能動的屈曲速度のみを抽出
+      const relVy = rawTipVy - rawBaseVy;
+      const vy = relVy / safeBaseDistPx;
 
       const thModel = fingerThresholdModels[fKey] || { hitRy: 0.50, liftRy: 0.42 };
-      const vyTh = FINGER_VY_THRESHOLDS[fKey] || 1.8;
+      const vyTh = FINGER_VY_THRESHOLDS[fKey] || 1.4;
 
       fingerMetrics[fKey] = {
         fKey,
@@ -3222,14 +3234,14 @@ function drawRawHandLandmarks(results) {
       }
     }
 
-    // 2. 打鍵（押鍵）判定（つられ下がり競合を抑制）
-    if (!isReacquired) {
+    // 2. 打鍵（押鍵）判定（手首相殺・突出度判定・全指ロックアウトによる連動誤爆根絶）
+    if (!isReacquired && !isGlobalCooldown) {
       const hitCandidates = [];
       for (const fKey of FINGER_KEY_LIST) {
         if (fingerTapStates[fKey] === "IDLE") {
           const m = fingerMetrics[fKey];
           if (m.ry >= m.hitRy && m.vy >= m.vyTh) {
-            // 勢いスコア：速度の超過度 × 1.5 + 変位の超過度
+            // 勢いスコア：相対速度の超過度 × 1.5 + 変位の超過度
             const score = (m.vy / m.vyTh) * 1.5 + (m.ry / m.hitRy);
             hitCandidates.push({ ...m, score });
           }
@@ -3237,31 +3249,47 @@ function drawRawHandLandmarks(results) {
       }
 
       if (hitCandidates.length > 0) {
-        // 最も勢いよく打鍵された指を優先（つられ下がり誤爆を完全に除外）
+        // スコア降順ソート
         hitCandidates.sort((a, b) => b.score - a.score);
         const winner = hitCandidates[0];
+        const runnerUp = hitCandidates[1];
 
-        fingerTapStates[winner.fKey] = "TOUCHED";
+        // 突出度チェック：2位が存在する場合、1位のスコアが2位の1.4倍以上あるか判定（拮抗時は連動によるブレとして見送り）
+        const isDominant = !runnerUp || (winner.score >= runnerUp.score * 1.4);
 
-        // メロディ発音
-        playTapSound(winner.cfg.rightNote, true, MELODY_VELOCITY, "melody");
+        if (isDominant) {
+          lastGlobalHitTime = now;
 
-        // 画面上部ピアノ鍵盤のフラッシュ
-        flashPianoKey(winner.cfg.rightNote);
+          // 勝者の指を TOUCHED に
+          fingerTapStates[winner.fKey] = "TOUCHED";
 
-        // パーティクル＆手ウィジェットポップ
-        triggerFreeNoteHit(winner.fKey);
+          // 連鎖誤爆（ドミノ発火）防止：一緒に動いてしまった他の候補指も TOUCHED 扱いにして即座の連続誤発音を遮断
+          for (const cand of hitCandidates) {
+            if (cand.fKey !== winner.fKey) {
+              fingerTapStates[cand.fKey] = "TOUCHED";
+            }
+          }
 
-        // HUD更新
-        updateStateHud(`${winner.cfg.shortName} (${winner.cfg.note})`, true);
+          // メロディ発音
+          playTapSound(winner.cfg.rightNote, true, MELODY_VELOCITY, "melody");
 
-        currentTip.x = winner.smoothTip.x;
-        currentTip.y = winner.smoothTip.y;
-        updateDebugMetrics(winner.smoothTip.x, winner.smoothTip.y, winner.ry, winner.vy);
+          // 画面上部ピアノ鍵盤のフラッシュ
+          flashPianoKey(winner.cfg.rightNote);
 
-        console.log(
-          `[FREE HIT] ${winner.cfg.label}: ry=${winner.ry.toFixed(3)} >= TH:${winner.hitRy.toFixed(2)}, vy=${winner.vy.toFixed(2)} >= V_TH:${winner.vyTh.toFixed(1)}`
-        );
+          // パーティクル＆手ウィジェットポップ
+          triggerFreeNoteHit(winner.fKey);
+
+          // HUD更新
+          updateStateHud(`${winner.cfg.shortName} (${winner.cfg.note})`, true);
+
+          currentTip.x = winner.smoothTip.x;
+          currentTip.y = winner.smoothTip.y;
+          updateDebugMetrics(winner.smoothTip.x, winner.smoothTip.y, winner.ry, winner.vy);
+
+          console.log(
+            `[FREE HIT] ${winner.cfg.label}: ry=${winner.ry.toFixed(3)} >= TH:${winner.hitRy.toFixed(2)}, relVy=${winner.vy.toFixed(2)} >= V_TH:${winner.vyTh.toFixed(1)}${runnerUp ? ` (score: ${winner.score.toFixed(2)} vs 2nd: ${runnerUp.score.toFixed(2)})` : ""}`
+          );
+        }
       } else {
         const defM = fingerMetrics[currentFingerKey] || fingerMetrics.MIDDLE;
         currentTip.x = defM.smoothTip.x;
