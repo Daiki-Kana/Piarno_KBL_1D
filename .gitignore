@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 *.code-workspace
+
+# Testing / MCP artifacts
+.playwright-mcp/
+
