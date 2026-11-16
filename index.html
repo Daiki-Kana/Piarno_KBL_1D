@@ -6,7 +6,10 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <title>Piarno - 5本指フリーセッション</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#000000" />
+    <title>あいうえおリハビリ - 5本指セッション</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -107,12 +110,12 @@
             <div class="key white-key" data-note="G4"></div>
             <div class="key white-key" data-note="A4"></div>
             <div class="key white-key" data-note="B4"></div>
-            <!-- 第3オクターブ (C5〜C6) -->
-            <div class="key white-key" data-note="C5"></div>
-            <div class="key white-key" data-note="D5"></div>
-            <div class="key white-key" data-note="E5"></div>
-            <div class="key white-key" data-note="F5"></div>
-            <div class="key white-key" data-note="G5"></div>
+            <!-- 第3オクターブ (C5〜C6) 高齢者リハビリ用「あ・い・う・え・お」 -->
+            <div class="key white-key" data-note="C5"><span class="key-vowel">あ</span></div>
+            <div class="key white-key" data-note="D5"><span class="key-vowel">い</span></div>
+            <div class="key white-key" data-note="E5"><span class="key-vowel">う</span></div>
+            <div class="key white-key" data-note="F5"><span class="key-vowel">え</span></div>
+            <div class="key white-key" data-note="G5"><span class="key-vowel">お</span></div>
             <div class="key white-key" data-note="A5"></div>
             <div class="key white-key" data-note="B5"></div>
             <div class="key white-key" data-note="C6"></div>
@@ -141,6 +144,11 @@
         </div>
       </div>
 
+      <!-- 画面上部中央：打鍵した文字の表示カード（黒四角・白文字・白黒ミニマル） -->
+      <div id="vowel-display-card" class="vowel-display-card" aria-live="polite">
+        <span id="vowel-display-text" class="vowel-display-text">-</span>
+      </div>
+
       <!-- 画面上部：演奏進捗テキストバッジ（白黒ミニマル・フリーセッション時は非表示） -->
       <div id="song-progress-badge" class="song-progress-badge hidden">FREE</div>
 
@@ -164,37 +172,37 @@
           </div>
         </div>
       </div>
-      <!-- 起動時：フリーセッションスタートモーダル -->
+      <!-- 起動時：あいうえお リハビリセッションスタートモーダル -->
       <div id="start-modal" class="start-modal">
         <div class="start-card">
-          <div class="start-title">5本指フリーセッション</div>
+          <div class="start-title">あいうえお リハビリセッション</div>
           <div class="free-session-guide">
-            <p class="free-guide-desc">指を動かすと5本の指それぞれで異なるピアノの音が鳴ります。</p>
+            <p class="free-guide-desc">机の上で指をタップすると、5本の指それぞれで「あ・い・う・え・お」が鳴ります。</p>
             <div class="finger-note-mapping">
               <div class="finger-badge-item" style="--finger-color: #ff3366;">
                 <span class="finger-name">親指</span>
-                <span class="finger-note">ド (C5)</span>
+                <span class="finger-note">あ</span>
               </div>
               <div class="finger-badge-item" style="--finger-color: #ff9900;">
                 <span class="finger-name">人差し指</span>
-                <span class="finger-note">レ (D5)</span>
+                <span class="finger-note">い</span>
               </div>
               <div class="finger-badge-item" style="--finger-color: #00e5ff;">
                 <span class="finger-name">中指</span>
-                <span class="finger-note">ミ (E5)</span>
+                <span class="finger-note">う</span>
               </div>
               <div class="finger-badge-item" style="--finger-color: #39ff14;">
                 <span class="finger-name">薬指</span>
-                <span class="finger-note">ファ (F5)</span>
+                <span class="finger-note">え</span>
               </div>
               <div class="finger-badge-item" style="--finger-color: #bd00ff;">
                 <span class="finger-name">小指</span>
-                <span class="finger-note">ソ (G5)</span>
+                <span class="finger-note">お</span>
               </div>
             </div>
           </div>
           <button id="start-play-btn" class="start-play-btn">
-            <span id="start-play-text">セッションを開始</span>
+            <span id="start-play-text">スタート</span>
           </button>
           <div class="start-hint">
             ※机の上などで指をタップ（打鍵）してみてください

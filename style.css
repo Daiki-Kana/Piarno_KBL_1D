@@ -12,8 +12,11 @@ html, body {
   background-color: #000000;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
+  height: -webkit-fill-available;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -22,9 +25,11 @@ html, body {
 }
 
 #app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: -webkit-fill-available;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -33,26 +38,32 @@ html, body {
   -webkit-user-select: none;
   touch-action: none;
   overscroll-behavior: none;
+  overflow: hidden;
 }
 
-/* ビデオコンテナ：カメラ映像のアスペクト比を維持したまま、画面領域（幅・高さ）の限界まで最大拡大 */
+/* ビデオコンテナ：iPhone標準カメラアプリと同じ4:3比率（縦持ち時3:4）ファインダー配置 */
 .video-container {
   position: relative;
   display: block;
-  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算 */
+  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算（標準カメラ比率） */
   width: min(100vw, calc(100vh * var(--video-aspect, 1.3333)));
   height: min(100vh, calc(100vw / var(--video-aspect, 1.3333)));
   width: min(100dvw, calc(100dvh * var(--video-aspect, 1.3333)));
   height: min(100dvh, calc(100dvw / var(--video-aspect, 1.3333)));
+  max-width: 100vw;
+  max-height: 100dvh;
+  max-width: 100dvw;
+  max-height: 100dvh;
   line-height: 0; /* 下部の隙間を排除 */
+  overflow: hidden;
 }
 
-/* インカメラ映像：コンテナに合わせて100%拡大表示、鏡像（ミラー）反転 */
+/* インカメラ映像：コンテナに合わせてアスペクト比完全同期、クロップ・歪みなし、鏡像反転 */
 #webcam {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill; /* コンテナ自体がアスペクト比を完全維持しているためfillで完全重畳 */
+  object-fit: fill;
   transform: scaleX(-1);
 }
 
@@ -63,6 +74,7 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
+  object-fit: fill;
   transform: scaleX(-1);
   pointer-events: none;
 }
@@ -198,7 +210,7 @@ html, body {
    ========================================================================== */
 .top-right-controls {
   position: absolute;
-  top: calc(62px + env(safe-area-inset-top, 0px));
+  top: calc(16px + env(safe-area-inset-top, 0px));
   right: calc(16px + env(safe-area-inset-right, 0px));
   z-index: 200;
   display: flex;
@@ -226,9 +238,10 @@ html, body {
 }
 
 /* ==========================================================================
-   画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤
+   画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤（非表示）
    ========================================================================== */
 .piano-keyboard-container {
+  display: none !important;
   position: absolute;
   top: calc(0px + env(safe-area-inset-top, 0px));
   left: 0;
@@ -638,9 +651,10 @@ html, body {
 }
 
 /* ==========================================================================
-   画面最上部：3オクターブ ピアノ鍵盤（全幅・半透明・完全四角・テキストなし）
+   画面最上部：3オクターブ ピアノ鍵盤（非表示）
    ========================================================================== */
 .piano-keyboard {
+  display: none !important;
   --black-key-width: 2.8%;
   position: absolute;
   top: 0;
@@ -681,6 +695,28 @@ html, body {
   border-radius: 0;
   position: relative;
   transition: background-color 0.08s ease, box-shadow 0.12s ease;
+}
+
+/* 高齢者リハビリ用 鍵盤上の母音ラベル（あ・い・う・え・お） */
+.key-vowel {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  line-height: 1;
+  user-select: none;
+  letter-spacing: -0.5px;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+}
+
+.white-key.is-pressed .key-vowel {
+  color: #ffffff;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
 }
 
 /* 黒鍵（15鍵：半透明ダーク・完全四角） */
@@ -730,6 +766,46 @@ html, body {
   background-color: rgba(0, 229, 255, 0.92) !important;
   border-color: #00e5ff !important;
   box-shadow: 0 0 10px rgba(0, 229, 255, 0.7) !important;
+}
+
+/* ==========================================================================
+   画面上部中央：打鍵した文字表示カード（黒四角・白文字・ボーダーレス）
+   ========================================================================== */
+.vowel-display-card {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: 108px;
+  height: 108px;
+  background-color: rgba(18, 18, 18, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 210;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.15s ease;
+}
+
+.vowel-display-card.hit-pop {
+  transform: translateX(-50%) scale(1.12);
+  background-color: #000000;
+}
+
+.vowel-display-text {
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", sans-serif;
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
 }
 
 /* ==========================================================================
@@ -1092,10 +1168,12 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 390;
-  padding: 16px;
+  padding: max(12px, env(safe-area-inset-top, 12px)) 16px max(12px, env(safe-area-inset-bottom, 12px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   opacity: 1;
   transition: opacity 0.25s ease, visibility 0.25s ease;
 }
@@ -1107,13 +1185,15 @@ html, body {
 }
 
 .start-card {
-  background-color: #111111;
-  border: 1px solid #333333;
-  border-radius: 12px;
-  max-width: 340px;
+  background-color: #141414;
+  border: none;
+  border-radius: 16px;
+  max-width: 360px;
   width: 100%;
-  padding: 24px 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 20px 18px 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.95);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1121,53 +1201,58 @@ html, body {
 }
 
 .start-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
-  letter-spacing: 1px;
-  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
 }
 
 .free-session-guide {
   width: 100%;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .free-guide-desc {
-  font-size: 12px;
-  color: #aaaaaa;
-  margin: 0 0 14px 0;
-  line-height: 1.5;
+  font-size: 11.5px;
+  color: #999999;
+  margin: 0 0 12px 0;
+  line-height: 1.45;
 }
 
 .finger-note-mapping {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
   width: 100%;
 }
 
 .finger-badge-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background-color: #1a1a1a;
-  border-radius: 6px;
-  border-left: 4px solid var(--finger-color, #00e5ff);
+  justify-content: center;
+  padding: 8px 2px;
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  border: none;
+  border-top: 3px solid var(--finger-color, #00e5ff);
+  gap: 3px;
 }
 
 .finger-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: #dddddd;
+  font-size: 10px;
+  font-weight: 500;
+  color: #888888;
+  white-space: nowrap;
 }
 
 .finger-note {
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
-  color: var(--finger-color, #00e5ff);
-  font-family: monospace;
+  color: #ffffff;
+  line-height: 1.1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .start-song-list {
@@ -1183,8 +1268,8 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: #181818;
-  border: 1px solid #2a2a2a;
-  border-radius: 6px;
+  border: none;
+  border-radius: 8px;
   padding: 11px 14px;
   color: #aaaaaa;
   font-size: 13.5px;
@@ -1198,12 +1283,10 @@ html, body {
 .start-song-item:hover {
   background-color: #222222;
   color: #ffffff;
-  border-color: #444444;
 }
 
 .start-song-item.selected {
   background-color: #262626;
-  border-color: #ffffff;
   color: #ffffff;
   font-weight: 600;
 }
@@ -1219,10 +1302,10 @@ html, body {
   justify-content: center;
   background-color: #ffffff;
   color: #000000;
-  border: 1px solid #ffffff;
-  border-radius: 6px;
-  padding: 12px 16px;
-  font-size: 14px;
+  border: none;
+  border-radius: 8px;
+  padding: 13px 16px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 1.5px;
   cursor: pointer;
@@ -1233,7 +1316,6 @@ html, body {
 
 .start-play-btn:hover {
   background-color: #e0e0e0;
-  border-color: #e0e0e0;
   transform: translateY(-1px);
 }
 

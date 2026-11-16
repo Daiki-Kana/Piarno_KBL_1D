@@ -53,6 +53,26 @@ const testSoundBtn = document.getElementById("test-sound-btn");
 const targetFingerVal = document.getElementById("target-finger-val");
 const targetTapProgress = document.getElementById("target-tap-progress");
 const songProgressBadge = document.getElementById("song-progress-badge");
+const vowelDisplayCard = document.getElementById("vowel-display-card");
+const vowelDisplayText = document.getElementById("vowel-display-text");
+
+/**
+ * 鳴らした文字（黒四角に白文字）の表示更新とポップ演出
+ * @param {string} text 例: "あ", "い", "う", "え", "お"
+ */
+export function updateVowelDisplay(text) {
+  if (vowelDisplayText) {
+    vowelDisplayText.textContent = text;
+  }
+  if (vowelDisplayCard) {
+    vowelDisplayCard.classList.remove("hit-pop");
+    void vowelDisplayCard.offsetWidth; // アニメーション再トリガー
+    vowelDisplayCard.classList.add("hit-pop");
+    setTimeout(() => {
+      if (vowelDisplayCard) vowelDisplayCard.classList.remove("hit-pop");
+    }, 180);
+  }
+}
 const debugPanel = document.getElementById("debug-panel");
 
 // 画面最上部：3オクターブ ピアノ鍵盤（半透明・四角・HUD専用）
@@ -83,11 +103,125 @@ export let testDataDatasets = [];
 export let testDataFrames = [];
 
 // Web Audio API サウンドエンジン ＆ Tone.js Salamander Grand Piano
-// Web Audio API サウンドエンジン ＆ Tone.js Salamander Grand Piano
 let audioCtx = null;
 let tapCount = 0;
 let pianoSampler = null;
 let isSamplerLoaded = false;
+
+// ============================================================================
+// 高齢者リハビリ向け「あ・い・う・え・お」即時発声サウンドエンジン
+// ============================================================================
+export const voiceBuffers = {};
+let isVoiceLoaded = false;
+
+// Viteのベースパスに対応した音声ファイルパス
+const audioBasePath = (import.meta.env?.BASE_URL || "./").replace(/\/$/, "");
+const VOICE_FILES = {
+  a: `${audioBasePath}/audio/a.mp3`,
+  i: `${audioBasePath}/audio/i.mp3`,
+  u: `${audioBasePath}/audio/u.mp3`,
+  e: `${audioBasePath}/audio/e.mp3`,
+  o: `${audioBasePath}/audio/o.mp3`
+};
+
+export const FINGER_TO_VOICE = {
+  THUMB: "a",
+  INDEX: "i",
+  MIDDLE: "u",
+  RING: "e",
+  PINKY: "o"
+};
+
+export const VOICE_KANA = {
+  a: "あ",
+  i: "い",
+  u: "う",
+  e: "え",
+  o: "お"
+};
+
+/**
+ * 高齢者リハビリ用「あ・い・う・え・お」音声ファイルのプリロード（Web Audio API）
+ */
+export async function loadVoiceBuffers() {
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+
+  const entries = Object.entries(VOICE_FILES);
+  await Promise.all(
+    entries.map(async ([key, url]) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const arrayBuffer = await res.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        voiceBuffers[key] = audioBuffer;
+        console.log(`[VOICE] 音声バッファロード完了: ${key} (${VOICE_KANA[key]})`);
+      } catch (err) {
+        console.warn(`[VOICE] 音声ロード失敗 (${key}):`, err);
+      }
+    })
+  );
+  isVoiceLoaded = Object.keys(voiceBuffers).length > 0;
+}
+
+/**
+ * 高齢者リハビリ向け「あ・い・う・え・お」音声の即時再生（0msレイテンシ）
+ * @param {string} voiceKeyOrFinger "a"|"i"|"u"|"e"|"o" または指キー "THUMB"|"INDEX"|"MIDDLE"|"RING"|"PINKY"
+ * @param {number} velocity 音量（0.0〜1.0）
+ * @param {boolean} countAsTap タップ回数としてカウントするか
+ */
+export function playVoiceSound(voiceKeyOrFinger, velocity = 1.0, countAsTap = true) {
+  const ctx = ensureAudioContext();
+  const voiceKey = FINGER_TO_VOICE[voiceKeyOrFinger] || voiceKeyOrFinger;
+  const kana = VOICE_KANA[voiceKey] || "あ";
+
+  // 1. Web Audio API バッファによる即時再生（低遅延・同時打鍵対応）
+  if (ctx && voiceBuffers[voiceKey]) {
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = voiceBuffers[voiceKey];
+      const gainNode = ctx.createGain();
+      // 高齢者にも聞き取りやすいよう、明瞭な音圧に調整
+      const vol = Math.min(1.2, Math.max(0.3, velocity * 1.15));
+      gainNode.gain.setValueAtTime(vol, ctx.currentTime);
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      source.start(0);
+    } catch (e) {
+      console.warn("[VOICE] AudioBuffer再生エラー、Web Speech APIへフォールバック:", e);
+      speakFallback(kana);
+    }
+  } else {
+    // プリロード完了前またはロード失敗時のフォールバック
+    speakFallback(kana);
+  }
+
+  if (countAsTap) {
+    tapCount++;
+    if (tapCountVal) {
+      tapCountVal.textContent = `${tapCount}`;
+    }
+  }
+}
+
+/**
+ * Web Speech API による日本語音声フォールバック発声
+ * @param {string} text 発音する文字（"あ", "い", "う", "え", "お"）
+ */
+function speakFallback(text) {
+  if ("speechSynthesis" in window) {
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "ja-JP";
+      utter.rate = 1.25; // リハビリのテンポに合わせて歯切れ良く
+      utter.pitch = 1.1; // 高齢者に聞き取りやすいやや高めのピッチ
+      window.speechSynthesis.speak(utter);
+    } catch (err) {
+      console.warn("[VOICE] SpeechSynthesisフォールバックエラー:", err);
+    }
+  }
+}
 
 // 周波数（Hz）からノート名への高精度マッピング（自然な中央オクターブ C4〜G4 を右手メロディ、低音 C3〜G3 を自動伴奏に設定）
 const FREQ_TO_NOTE_MAP = {
@@ -185,6 +319,8 @@ function initPianoSampler() {
 
 // サンプラーの初期化を実行
 initPianoSampler();
+// 高齢者リハビリ用「あ・い・う・え・お」音声の事前フェッチ開始
+loadVoiceBuffers().catch(() => {});
 
 // 学習済みCSVから自動導出される閾値モデル（デフォルト値付き）
 let hitRyThreshold = 0.70;
@@ -565,17 +701,18 @@ export const FINGER_NAMES = {
   PINKY: "小指"
 };
 
-// 対象指の定義（右手 親指〜小指までの全指・ハ長調基本ポジション C5〜G5）
+// 対象指の定義（高齢者リハビリ向け：右手 親指〜小指までの全指・あ〜お）
 export const FINGER_CONFIGS = {
   THUMB: {
     fingerNum: 1,
     key: "THUMB",
     hand: "右手",
     shortName: "親指",
-    label: "右手 親指 (1: ド)",
+    label: "右手 親指 (1: あ)",
     rightNote: "C5",
-    note: "ド",
-    freq: 523.25, // C5 (ド)
+    note: "あ",
+    voiceKey: "a",
+    freq: 523.25, // C5
     baseIdx: 2,   // MCP (付け根)
     p1Idx: 1,     // CMC
     p2Idx: 2,     // MCP
@@ -594,10 +731,11 @@ export const FINGER_CONFIGS = {
     key: "INDEX",
     hand: "右手",
     shortName: "人差し指",
-    label: "右手 人差し指 (2: レ)",
+    label: "右手 人差し指 (2: い)",
     rightNote: "D5",
-    note: "レ",
-    freq: 587.33, // D5 (レ)
+    note: "い",
+    voiceKey: "i",
+    freq: 587.33, // D5
     baseIdx: 5,   // MCP
     p1Idx: 5,     // MCP
     p2Idx: 6,     // PIP
@@ -616,10 +754,11 @@ export const FINGER_CONFIGS = {
     key: "MIDDLE",
     hand: "右手",
     shortName: "中指",
-    label: "右手 中指 (3: ミ)",
+    label: "右手 中指 (3: う)",
     rightNote: "E5",
-    note: "ミ",
-    freq: 659.25, // E5 (ミ)
+    note: "う",
+    voiceKey: "u",
+    freq: 659.25, // E5
     baseIdx: 9,   // MCP
     p1Idx: 9,     // MCP
     p2Idx: 10,    // PIP
@@ -638,10 +777,11 @@ export const FINGER_CONFIGS = {
     key: "RING",
     hand: "右手",
     shortName: "薬指",
-    label: "右手 薬指 (4: ファ)",
+    label: "右手 薬指 (4: え)",
     rightNote: "F5",
-    note: "ファ",
-    freq: 698.46, // F5 (ファ)
+    note: "え",
+    voiceKey: "e",
+    freq: 698.46, // F5
     baseIdx: 13,  // MCP
     p1Idx: 13,    // MCP
     p2Idx: 14,    // PIP
@@ -660,10 +800,11 @@ export const FINGER_CONFIGS = {
     key: "PINKY",
     hand: "右手",
     shortName: "小指",
-    label: "右手 小指 (5: ソ)",
+    label: "右手 小指 (5: お)",
     rightNote: "G5",
-    note: "ソ",
-    freq: 783.99, // G5 (ソ)
+    note: "お",
+    voiceKey: "o",
+    freq: 783.99, // G5
     baseIdx: 17,  // MCP
     p1Idx: 17,    // MCP
     p2Idx: 18,    // PIP
@@ -1215,9 +1356,9 @@ export function selectSong(songId, withCountdown = true) {
 }
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
-// 手首（0）から親指・人差し指・中指・薬指・小指（20）まで全関節を独立して常時平滑化
-// dCutoffを2.5Hzに緩和し、打鍵アタック時の急峻な速度ピークの潰れ・遅延を解消
-const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(1.2, 0.008, 2.5));
+// minCutoffを0.85Hzに最適化し、静止時・低速時の小刻みなジッター・マーカー震えを強固に吸収
+// betaを0.012に設定して素早いタップ動作にはカットオフを自動で引き上げ遅延ゼロで追従
+const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(0.85, 0.012, 1.8));
 
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
 const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
@@ -1303,7 +1444,8 @@ export const fingerTapStates = {
 
 // フリーセッション用：全指打鍵ロックアウト（不応期）管理
 let lastGlobalHitTime = 0;
-const GLOBAL_HIT_COOLDOWN_MS = 100; // 打鍵後100msは全指の新規打鍵をブロック（連鎖誤爆防止）
+// 高齢者のリハビリ打鍵および連動指の遅延着地による多重発音を防止するため、不応期を240msに最適化
+const GLOBAL_HIT_COOLDOWN_MS = 240;
 
 // 指ごとのデータセット格納用
 export const fingerDatasets = {
@@ -1549,7 +1691,7 @@ export function flashPianoKey(noteName) {
 export function renderSongGuideUI() {
   if (currentSongId === "free_session") {
     if (targetFingerVal) {
-      targetFingerVal.textContent = "右手 1〜5 (フリーセッション: ド〜ソ)";
+      targetFingerVal.textContent = "右手 1〜5 (リハビリ: あ〜お)";
     }
     if (targetTapProgress) {
       targetTapProgress.textContent = "FREE PLAY";
@@ -2421,6 +2563,7 @@ async function handleStartPlay() {
 
   // 1. ユーザー操作（タップ）の同期スタック内で Web Audio API を即時有効化
   ensureAudioContext();
+  loadVoiceBuffers();
 
   // 音声バナーは不要なので非表示を確実に維持
   if (audioStartBanner) {
@@ -2455,7 +2598,7 @@ async function handleStartPlay() {
   } catch (error) {
     console.error("起動エラー:", error);
     startPlayBtn.disabled = false;
-    if (startPlayText) startPlayText.textContent = "セッションを開始";
+    if (startPlayText) startPlayText.textContent = "スタート";
 
     // 自動再生制限による起動保留の場合は、白黒ミニマルなタップ起動プロンプトを表示
     if (error.name === "AutoplayBlockedError") {
@@ -2599,8 +2742,8 @@ function isTabletOrSquareScreen() {
   return isAppleTablet || (isTouch && ratio < 1.55);
 }
 
-// 初期表示アスペクト比の設定（端末種別に応じて画面初期比率を最適化）
-const initialAspect = isTabletOrSquareScreen() ? 4 / 3 : 16 / 9;
+// 初期表示アスペクト比の設定（iPhone標準カメラアプリと同じ4:3比率を基準に設定）
+const initialAspect = 4 / 3;
 document.documentElement.style.setProperty("--video-aspect", initialAspect.toFixed(4));
 
 /**
@@ -2609,156 +2752,74 @@ document.documentElement.style.setProperty("--video-aspect", initialAspect.toFix
 async function startFrontCamera() {
   let stream = null;
 
-  const isTablet = isTabletOrSquareScreen();
-  console.log(`[CAM] 端末判定: ${isTablet ? "iPad/タブレット (4:3ネイティブ優先)" : "PC/スマートフォン (16:9優先)"}`);
+  console.log("[CAM] iPhone標準カメラアプリと同じ4:3比率（ネイティブセンサー画角）を最優先で要求");
 
-  // iPad/タブレットでは4:3を最優先して上下視野（手首・指先の垂直可動域）を最大確保
-  // PCや一般的なスマホでは16:9を優先して自然なワイド表示を維持
-  const tryConstraints = isTablet
-    ? [
-        // 1. 480p (640x480, 4:3) 60fps志向（iPadネイティブ比率・上下視野最大・低負荷）
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            aspectRatio: { ideal: 4 / 3 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 2. 720p (960x720, 4:3) 60fps志向
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 720 },
-            aspectRatio: { ideal: 4 / 3 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 3. 480p (640x480, 4:3) 任意fps
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            aspectRatio: { ideal: 4 / 3 }
-          },
-          audio: false
-        },
-        // 4. 720p (960x720, 4:3) 任意fps
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 720 },
-            aspectRatio: { ideal: 4 / 3 }
-          },
-          audio: false
-        },
-        // 5. 16:9 フォールバック (960x540)
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 540 },
-            aspectRatio: { ideal: 16 / 9 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 6. インカメラ指定のみ
-        {
-          video: {
-            facingMode: "user"
-          },
-          audio: false
-        },
-        // 7. 最終フォールバック
-        {
-          video: true,
-          audio: false
-        }
-      ]
-    : [
-        // 1. 540p (960x540, 16:9) 60fps志向（PC/スマホ向け・画質と軽量性の最良バランス）
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 540 },
-            aspectRatio: { ideal: 16 / 9 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 2. 360p (640x360, 16:9) 60fps志向（超軽量・最高レスポンス重視）
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-            aspectRatio: { ideal: 16 / 9 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 3. 360p (640x360, 16:9) 任意fps
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-            aspectRatio: { ideal: 16 / 9 }
-          },
-          audio: false
-        },
-        // 4. 540p (960x540, 16:9) 任意fps
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 540 },
-            aspectRatio: { ideal: 16 / 9 }
-          },
-          audio: false
-        },
-        // 5. 480p (640x480, 4:3) フォールバック
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            aspectRatio: { ideal: 4 / 3 }
-          },
-          audio: false
-        },
-        // 6. 720p (1280x720, 16:9) 60fps志向
-        {
-          video: {
-            facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            aspectRatio: { ideal: 16 / 9 },
-            frameRate: { ideal: 60 }
-          },
-          audio: false
-        },
-        // 7. インカメラ指定のみ
-        {
-          video: {
-            facingMode: "user"
-          },
-          audio: false
-        },
-        // 8. 最終フォールバック
-        {
-          video: true,
-          audio: false
-        }
-      ];
+  // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
+  // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
+  const tryConstraints = [
+    // 1. 480p (640x480, 4:3) 60fps志向（標準カメラ比率・最高レスポンス・低負荷）
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        aspectRatio: { ideal: 4 / 3 },
+        frameRate: { ideal: 60 }
+      },
+      audio: false
+    },
+    // 2. 720p (960x720, 4:3) 60fps志向
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 960 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 4 / 3 },
+        frameRate: { ideal: 60 }
+      },
+      audio: false
+    },
+    // 3. 480p (640x480, 4:3) 任意fps
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        aspectRatio: { ideal: 4 / 3 }
+      },
+      audio: false
+    },
+    // 4. 720p (960x720, 4:3) 任意fps
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 960 },
+        height: { ideal: 720 },
+        aspectRatio: { ideal: 4 / 3 }
+      },
+      audio: false
+    },
+    // 5. 4:3 任意解像度
+    {
+      video: {
+        facingMode: "user",
+        aspectRatio: { ideal: 4 / 3 }
+      },
+      audio: false
+    },
+    // 6. インカメラ指定のみ
+    {
+      video: {
+        facingMode: "user"
+      },
+      audio: false
+    },
+    // 7. 最終フォールバック
+    {
+      video: true,
+      audio: false
+    }
+  ];
 
   let lastError = null;
   for (const constraints of tryConstraints) {
@@ -3153,7 +3214,7 @@ function drawRawHandLandmarks(results) {
   // 追従中の右手手首の生正規化座標で lastTrackedWrist を毎フレーム更新
   lastTrackedWrist = { x: landmarks[0].x, y: landmarks[0].y };
 
-  // 全21関節点を独立適応平滑化（1 Euro Filter）
+  // 全21関節点を独立適応平滑化（1 Euro Filter ＋ 異常値ワープクランプ）
   if (hasHands) {
     if (isReacquired) {
       for (let i = 0; i < 21; i++) {
@@ -3162,9 +3223,33 @@ function drawRawHandLandmarks(results) {
       }
       lastFilteredFingerKey = currentFingerKey;
     } else {
+      // 手の基準スケール（前フレーム手首と中指付け根の距離）を基に1フレームあたりの最大許容移動距離を算出
+      const prevWrist = smoothedLandmarksPool[0];
+      const prevMiddleMcp = smoothedLandmarksPool[9];
+      const handScalePx = Math.hypot(prevMiddleMcp.x - prevWrist.x, prevMiddleMcp.y - prevWrist.y) || (height * 0.2);
+      // 1フレーム（約16〜33ms）での物理的上限距離（手のひら長の35%、かつ最低25px）
+      // 打鍵時や影によるAI検出の瞬間的な座標ワープ（マーカー飛び）を確実に抑制
+      const maxAllowedJumpPx = Math.max(25, handScalePx * 0.35);
+
       for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
-        landmarkFilters[i].filter(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
+        const targetX = raw.x * width;
+        const targetY = raw.y * height;
+        const prevPt = smoothedLandmarksPool[i];
+
+        const dx = targetX - prevPt.x;
+        const dy = targetY - prevPt.y;
+        const dist = Math.hypot(dx, dy);
+
+        let inputX = targetX;
+        let inputY = targetY;
+        if (dist > maxAllowedJumpPx) {
+          const ratio = maxAllowedJumpPx / dist;
+          inputX = prevPt.x + dx * ratio;
+          inputY = prevPt.y + dy * ratio;
+        }
+
+        landmarkFilters[i].filter(inputX, inputY, now, smoothedLandmarksPool[i]);
       }
     }
     hasValidSmoothedLandmarks = true;
@@ -3222,74 +3307,87 @@ function drawRawHandLandmarks(results) {
       };
     }
 
-    // 1. 各指のリフト（離鍵）復帰判定
+    // 1. 各指のリフト（離鍵）復帰判定（机面振動による誤解除を防ぎ、指が確実に持ち上がった場合のみIDLEへ復帰）
     for (const fKey of FINGER_KEY_LIST) {
       if (fingerTapStates[fKey] === "TOUCHED") {
         const m = fingerMetrics[fKey];
         const isLiftByPos = m.ry <= m.liftRy;
-        const isLiftByRebound = m.vy <= -1.0 && m.ry <= (m.hitRy - 0.02);
-        if (isLiftByPos || isLiftByRebound) {
+        if (isLiftByPos) {
           fingerTapStates[fKey] = "IDLE";
         }
       }
     }
 
-    // 2. 打鍵（押鍵）判定（手首相殺・突出度判定・全指ロックアウトによる連動誤爆根絶）
+    // 2. 打鍵（押鍵）判定：全5本指の相対動作量（最大移動指）比較による単独打鍵抽出
     if (!isReacquired && !isGlobalCooldown) {
-      const hitCandidates = [];
-      for (const fKey of FINGER_KEY_LIST) {
-        if (fingerTapStates[fKey] === "IDLE") {
-          const m = fingerMetrics[fKey];
-          if (m.ry >= m.hitRy && m.vy >= m.vyTh) {
-            // 勢いスコア：相対速度の超過度 × 1.5 + 変位の超過度
-            const score = (m.vy / m.vyTh) * 1.5 + (m.ry / m.hitRy);
-            hitCandidates.push({ ...m, score });
-          }
-        }
-      }
+      // 全5本指の能動的打鍵動作量（下降速度 × 深度）を算出
+      const allFingerMotions = FINGER_KEY_LIST.map((fKey) => {
+        const m = fingerMetrics[fKey];
+        const state = fingerTapStates[fKey];
+        // 能動的下降速度（下がっていない指は0）
+        const downVy = Math.max(0, m.vy);
+        // 指の押し下げ度合い（机面方向への深さ）
+        const depth = Math.max(0, m.ry);
+        // 瞬間動作量：能動下降速度 × 押し下げ深度
+        const motion = downVy * depth;
 
-      if (hitCandidates.length > 0) {
-        // スコア降順ソート
-        hitCandidates.sort((a, b) => b.score - a.score);
-        const winner = hitCandidates[0];
-        const runnerUp = hitCandidates[1];
+        return {
+          ...m,
+          state,
+          downVy,
+          depth,
+          motion
+        };
+      });
 
-        // 突出度チェック：2位が存在する場合、1位のスコアが2位の1.4倍以上あるか判定（拮抗時は連動によるブレとして見送り）
-        const isDominant = !runnerUp || (winner.score >= runnerUp.score * 1.4);
+      // 動作量の降順でソート（手の中で最も大きく動いている指を先頭に選定）
+      allFingerMotions.sort((a, b) => b.motion - a.motion);
 
-        if (isDominant) {
-          lastGlobalHitTime = now;
+      const top1 = allFingerMotions[0]; // 全体で最も動いている指
+      const top2 = allFingerMotions[1]; // 2番目に動いている指
 
-          // 勝者の指を TOUCHED に
-          fingerTapStates[winner.fKey] = "TOUCHED";
+      // 単独打鍵の確定条件：
+      // 1. トップの指が打鍵待機中（IDLE）
+      // 2. タップとして十分な速度・深度に到達していること
+      // 3. 2番目の指に対して動作量が2.0倍以上圧倒していること（手全体の沈み込みや連動時は比率が拮抗するため除外）
+      const hasMinTapActivity = top1.vy >= top1.vyTh && top1.ry >= top1.hitRy;
+      const isDominantOverAll = !top2 || top2.motion < 0.005 || (top1.motion >= top2.motion * 2.0);
 
-          // 連鎖誤爆（ドミノ発火）防止：一緒に動いてしまった他の候補指も TOUCHED 扱いにして即座の連続誤発音を遮断
-          for (const cand of hitCandidates) {
-            if (cand.fKey !== winner.fKey) {
-              fingerTapStates[cand.fKey] = "TOUCHED";
+      if (top1.state === "IDLE" && hasMinTapActivity && isDominantOverAll) {
+        lastGlobalHitTime = now;
+
+        // 勝者指を TOUCHED に設定
+        fingerTapStates[top1.fKey] = "TOUCHED";
+
+        // 連鎖誤爆（ドミノ発火）防止：連動して沈んでいる他の指もすべてTOUCHEDに移行
+        for (const f of allFingerMotions) {
+          if (f.fKey !== top1.fKey) {
+            if (f.ry >= f.liftRy || f.downVy > 0.4) {
+              fingerTapStates[f.fKey] = "TOUCHED";
             }
           }
-
-          // メロディ発音
-          playTapSound(winner.cfg.rightNote, true, MELODY_VELOCITY, "melody");
-
-          // 画面上部ピアノ鍵盤のフラッシュ
-          flashPianoKey(winner.cfg.rightNote);
-
-          // パーティクル＆手ウィジェットポップ
-          triggerFreeNoteHit(winner.fKey);
-
-          // HUD更新
-          updateStateHud(`${winner.cfg.shortName} (${winner.cfg.note})`, true);
-
-          currentTip.x = winner.smoothTip.x;
-          currentTip.y = winner.smoothTip.y;
-          updateDebugMetrics(winner.smoothTip.x, winner.smoothTip.y, winner.ry, winner.vy);
-
-          console.log(
-            `[FREE HIT] ${winner.cfg.label}: ry=${winner.ry.toFixed(3)} >= TH:${winner.hitRy.toFixed(2)}, relVy=${winner.vy.toFixed(2)} >= V_TH:${winner.vyTh.toFixed(1)}${runnerUp ? ` (score: ${winner.score.toFixed(2)} vs 2nd: ${runnerUp.score.toFixed(2)})` : ""}`
-          );
         }
+
+        // 高齢者リハビリ向け「あ・い・う・え・お」音声発声（最も動いた1本のみ）
+        playVoiceSound(top1.fKey, MELODY_VELOCITY, true);
+
+        // 画面上部ピアノ鍵盤のフラッシュ
+        flashPianoKey(top1.cfg.rightNote);
+
+        // パーティクル＆手ウィジェットポップ
+        triggerFreeNoteHit(top1.fKey);
+
+        // HUD更新
+        updateStateHud(`${top1.cfg.shortName} (${top1.cfg.note})`, true);
+        updateVowelDisplay(top1.cfg.note);
+
+        currentTip.x = top1.smoothTip.x;
+        currentTip.y = top1.smoothTip.y;
+        updateDebugMetrics(top1.smoothTip.x, top1.smoothTip.y, top1.ry, top1.vy);
+
+        console.log(
+          `[MAX MOTION HIT] ${top1.cfg.label}: motion=${top1.motion.toFixed(3)} (2nd: ${top2 ? `${top2.cfg.shortName}=${top2.motion.toFixed(3)}` : "none"})`
+        );
       } else {
         const defM = fingerMetrics[currentFingerKey] || fingerMetrics.MIDDLE;
         currentTip.x = defM.smoothTip.x;
@@ -3419,8 +3517,12 @@ function drawRawHandLandmarks(results) {
       // 現在の音符を取得
       const currentTarget = currentSequence[currentSongStep];
 
-      // 右手正解メロディ音を発音（レガート奏法・前の音を自然にリリースして打鍵）
-      playTapSound(currentTarget.rightNote || currentTarget.freq, true, MELODY_VELOCITY, "melody");
+      // 右手メロディ音を発音（高齢者リハビリ向け「あ・い・う・え・お」音声）
+      if (currentTarget.fingerKey) {
+        playVoiceSound(currentTarget.fingerKey, MELODY_VELOCITY, true);
+      } else {
+        playTapSound(currentTarget.rightNote || currentTarget.freq, true, MELODY_VELOCITY, "melody");
+      }
 
       // 画面上部ピアノ鍵盤の打鍵フラッシュ（白黒反転フィードバック：右手メロディおよび低音伴奏）
       flashPianoKey(currentTarget.rightNote);
@@ -3433,6 +3535,7 @@ function drawRawHandLandmarks(results) {
       // 自動伴奏（和音・左手パート・テンポ追従裏拍）を重ねて発音（プレイヤーの打鍵操作は不要）
       playAccompaniment(currentTarget);
       updateStateHud("TOUCHED", true);
+      updateVowelDisplay(currentTarget.note || "あ");
 
       console.log(
         `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, normVy=${tipVy.toFixed(2)} >= V_TH:${hitVyThreshold.toFixed(1)}${currentTarget.autoChord ? ` [自動伴奏: ${currentTarget.autoChord.join("+")}]` : currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
