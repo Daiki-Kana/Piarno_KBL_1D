@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "deploy": "vite build && wrangler pages deploy dist --project-name piarno1dtcn --branch main --commit-dirty=true"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.14",

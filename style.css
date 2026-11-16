@@ -12,11 +12,8 @@ html, body {
   background-color: #000000;
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-  width: 100%;
-  height: 100%;
-  height: -webkit-fill-available;
-  margin: 0;
-  padding: 0;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -25,11 +22,9 @@ html, body {
 }
 
 #app {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  height: -webkit-fill-available;
+  position: relative;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -38,32 +33,26 @@ html, body {
   -webkit-user-select: none;
   touch-action: none;
   overscroll-behavior: none;
-  overflow: hidden;
 }
 
-/* ビデオコンテナ：iPhone標準カメラアプリと同じ4:3比率（縦持ち時3:4）ファインダー配置 */
+/* ビデオコンテナ：カメラ映像のアスペクト比を維持したまま、画面領域（幅・高さ）の限界まで最大拡大 */
 .video-container {
   position: relative;
   display: block;
-  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算（標準カメラ比率） */
+  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算 */
   width: min(100vw, calc(100vh * var(--video-aspect, 1.3333)));
   height: min(100vh, calc(100vw / var(--video-aspect, 1.3333)));
   width: min(100dvw, calc(100dvh * var(--video-aspect, 1.3333)));
   height: min(100dvh, calc(100dvw / var(--video-aspect, 1.3333)));
-  max-width: 100vw;
-  max-height: 100dvh;
-  max-width: 100dvw;
-  max-height: 100dvh;
   line-height: 0; /* 下部の隙間を排除 */
-  overflow: hidden;
 }
 
-/* インカメラ映像：コンテナに合わせてアスペクト比完全同期、クロップ・歪みなし、鏡像反転 */
+/* インカメラ映像：コンテナに合わせて100%拡大表示、鏡像（ミラー）反転 */
 #webcam {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: fill; /* コンテナ自体がアスペクト比を完全維持しているためfillで完全重畳 */
   transform: scaleX(-1);
 }
 
@@ -74,7 +63,6 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
   transform: scaleX(-1);
   pointer-events: none;
 }
@@ -206,7 +194,6 @@ html, body {
 
 /* ==========================================================================
    右上固定：コントロール群（トラッキングライン切替ボタン ＆ 楽曲選択ボタン）
-   ※ピアノ鍵盤HUDの直下に配置
    ========================================================================== */
 .top-right-controls {
   position: absolute;
@@ -235,150 +222,6 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 215;
-}
-
-/* ==========================================================================
-   画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤（非表示）
-   ========================================================================== */
-.piano-keyboard-container {
-  display: none !important;
-  position: absolute;
-  top: calc(0px + env(safe-area-inset-top, 0px));
-  left: 0;
-  width: 100vw;
-  height: 44px;
-  z-index: 220;
-  display: flex;
-  pointer-events: auto;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.8);
-  box-sizing: border-box;
-}
-
-.piano-keyboard-glass {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  box-sizing: border-box;
-}
-
-.piano-keys {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  box-sizing: border-box;
-}
-
-/* 白鍵（52鍵） - 白黒ミニマル */
-.piano-key.white {
-  position: relative;
-  flex: 1 1 0;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.22);
-  border-right: 1px solid rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  padding-bottom: 2px;
-  box-sizing: border-box;
-  transition: background 0.08s ease, transform 0.06s ease;
-  z-index: 1;
-}
-
-.piano-key.white:first-child {
-  border-left: 1px solid rgba(0, 0, 0, 0.45);
-}
-
-.piano-key.white:hover {
-  background: rgba(255, 255, 255, 0.38);
-}
-
-/* 黒鍵（36鍵） - 漆黒ミニマル */
-.piano-key.black {
-  position: absolute;
-  width: 1.28%;
-  height: 60%;
-  top: 0;
-  z-index: 3;
-  background: #111111;
-  border: 0.5px solid rgba(255, 255, 255, 0.25);
-  border-top: none;
-  border-radius: 0 0 1.5px 1.5px;
-  cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
-  transition: background 0.08s ease, transform 0.06s ease;
-  box-sizing: border-box;
-}
-
-.piano-key.black:hover {
-  background: #2a2a2a;
-  border-color: rgba(255, 255, 255, 0.45);
-}
-
-/* C鍵のミニマル目印ラベル */
-.piano-key.white.c-key .key-octave-mark {
-  position: absolute;
-  bottom: 2px;
-  font-size: 7px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  color: rgba(255, 255, 255, 0.65);
-  pointer-events: none;
-}
-
-/* 次打鍵ターゲットガイド（白黒ミニマルパルス） */
-@keyframes keyTargetMinimalPulse {
-  0%, 100% {
-    background: rgba(255, 255, 255, 0.48);
-    box-shadow: inset 0 -2px 0 #ffffff;
-  }
-  50% {
-    background: rgba(255, 255, 255, 0.85);
-    box-shadow: inset 0 -3px 0 #ffffff, 0 0 8px rgba(255, 255, 255, 0.8);
-  }
-}
-
-.piano-key.white.key-target {
-  animation: keyTargetMinimalPulse 1.6s infinite ease-in-out;
-}
-
-.piano-key.black.key-target {
-  background: #555555;
-  border-color: #ffffff;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
-}
-
-/* 打鍵ヒット時の強力ハイライト（白黒反転・完全純白発光！） */
-.piano-key.white.key-hit,
-.piano-key.white:active {
-  background: #ffffff !important;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 1.0), 0 0 28px rgba(255, 255, 255, 0.6) !important;
-  transform: translateY(1.5px);
-  z-index: 2;
-}
-
-.piano-key.white.key-hit .key-octave-mark,
-.piano-key.white:active .key-octave-mark {
-  color: #000000 !important;
-}
-
-.piano-key.black.key-hit,
-.piano-key.black:active {
-  background: #ffffff !important;
-  border-color: #ffffff !important;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 1.0), 0 0 28px rgba(255, 255, 255, 0.6) !important;
-  transform: translateY(1.5px);
-  z-index: 4;
 }
 
 /* ==========================================================================
@@ -651,169 +494,11 @@ html, body {
 }
 
 /* ==========================================================================
-   画面最上部：3オクターブ ピアノ鍵盤（非表示）
-   ========================================================================== */
-.piano-keyboard {
-  display: none !important;
-  --black-key-width: 2.8%;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 50px;
-  background-color: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 220;
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
-}
-
-.keyboard-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-/* 白鍵（22鍵：C3〜C6 全幅均等配置・半透明スクエア） */
-.white-keys {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  gap: 1px;
-  background-color: rgba(0, 0, 0, 0.25);
-}
-
-.white-key {
-  flex: 1;
-  height: 100%;
-  background-color: rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: none;
-  border-radius: 0;
-  position: relative;
-  transition: background-color 0.08s ease, box-shadow 0.12s ease;
-}
-
-/* 高齢者リハビリ用 鍵盤上の母音ラベル（あ・い・う・え・お） */
-.key-vowel {
-  position: absolute;
-  bottom: 4px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.85);
-  pointer-events: none;
-  line-height: 1;
-  user-select: none;
-  letter-spacing: -0.5px;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
-}
-
-.white-key.is-pressed .key-vowel {
-  color: #ffffff;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-}
-
-/* 黒鍵（15鍵：半透明ダーク・完全四角） */
-.black-keys {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.black-key {
-  position: absolute;
-  top: 0;
-  width: var(--black-key-width, 2.8%);
-  height: 60%;
-  background-color: rgba(16, 16, 16, 0.82);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-top: none;
-  border-radius: 0;
-  z-index: 5;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
-  transition: background-color 0.08s ease, box-shadow 0.12s ease;
-}
-
-/* ターゲット音（次に弾くべきキーの薄い水色ガイド発光） */
-.white-key.is-target {
-  background-color: rgba(205, 245, 255, 0.75);
-  box-shadow: inset 0 -4px 0 0 #00e5ff;
-}
-
-.black-key.is-target {
-  background-color: rgba(12, 36, 45, 0.92);
-  box-shadow: inset 0 -4px 0 0 #00e5ff;
-}
-
-/* 打鍵時（タップ認識時の水色ネオンフラッシュ） */
-.white-key.is-pressed {
-  background-color: rgba(0, 229, 255, 0.92) !important;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.7) !important;
-}
-
-.black-key.is-pressed {
-  background-color: rgba(0, 229, 255, 0.92) !important;
-  border-color: #00e5ff !important;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.7) !important;
-}
-
-/* ==========================================================================
-   画面上部中央：打鍵した文字表示カード（黒四角・白文字・ボーダーレス）
-   ========================================================================== */
-.vowel-display-card {
-  position: absolute;
-  top: calc(16px + env(safe-area-inset-top, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  width: 108px;
-  height: 108px;
-  background-color: rgba(18, 18, 18, 0.94);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: none;
-  border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 210;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: transform 0.12s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.15s ease;
-}
-
-.vowel-display-card.hit-pop {
-  transform: translateX(-50%) scale(1.12);
-  background-color: #000000;
-}
-
-.vowel-display-text {
-  color: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", sans-serif;
-  font-size: 56px;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-}
-
-/* ==========================================================================
    演奏進捗バッジ（画面上部中央・白黒ミニマル）
    ========================================================================== */
 .song-progress-badge {
   position: absolute;
-  top: calc(58px + env(safe-area-inset-top, 0px));
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   background-color: rgba(20, 20, 20, 0.85);
@@ -1168,12 +853,10 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   z-index: 390;
-  padding: max(12px, env(safe-area-inset-top, 12px)) 16px max(12px, env(safe-area-inset-bottom, 12px));
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  padding: 16px;
   opacity: 1;
   transition: opacity 0.25s ease, visibility 0.25s ease;
 }
@@ -1185,15 +868,13 @@ html, body {
 }
 
 .start-card {
-  background-color: #141414;
-  border: none;
-  border-radius: 16px;
-  max-width: 360px;
+  background-color: #111111;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  max-width: 300px;
   width: 100%;
-  max-height: calc(100dvh - 32px);
-  overflow-y: auto;
-  padding: 20px 18px 16px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.95);
+  padding: 22px 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1201,58 +882,12 @@ html, body {
 }
 
 .start-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.free-session-guide {
-  width: 100%;
-  margin-bottom: 16px;
-}
-
-.free-guide-desc {
-  font-size: 11.5px;
-  color: #999999;
-  margin: 0 0 12px 0;
-  line-height: 1.45;
-}
-
-.finger-note-mapping {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-  width: 100%;
-}
-
-.finger-badge-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 2px;
-  background-color: #1e1e1e;
-  border-radius: 8px;
-  border: none;
-  border-top: 3px solid var(--finger-color, #00e5ff);
-  gap: 3px;
-}
-
-.finger-name {
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   color: #888888;
-  white-space: nowrap;
-}
-
-.finger-note {
-  font-size: 17px;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.1;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  text-transform: uppercase;
 }
 
 .start-song-list {
@@ -1268,8 +903,8 @@ html, body {
   align-items: center;
   justify-content: center;
   background-color: #181818;
-  border: none;
-  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
   padding: 11px 14px;
   color: #aaaaaa;
   font-size: 13.5px;
@@ -1283,10 +918,12 @@ html, body {
 .start-song-item:hover {
   background-color: #222222;
   color: #ffffff;
+  border-color: #444444;
 }
 
 .start-song-item.selected {
   background-color: #262626;
+  border-color: #ffffff;
   color: #ffffff;
   font-weight: 600;
 }
@@ -1302,10 +939,10 @@ html, body {
   justify-content: center;
   background-color: #ffffff;
   color: #000000;
-  border: none;
-  border-radius: 8px;
-  padding: 13px 16px;
-  font-size: 15px;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 1.5px;
   cursor: pointer;
@@ -1316,6 +953,7 @@ html, body {
 
 .start-play-btn:hover {
   background-color: #e0e0e0;
+  border-color: #e0e0e0;
   transform: translateY(-1px);
 }
 
