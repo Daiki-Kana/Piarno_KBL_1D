@@ -8,6 +8,7 @@
 
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import * as Tone from "tone";
+import { BlanchDetector } from "./blanchDetector.js";
 
 // DOM要素
 const video = document.getElementById("webcam");
@@ -70,6 +71,130 @@ window.addEventListener("resize", checkDebugPanelVisibility);
 // トラッキングライン（骨格線・指先マーカー）の表示フラグ（デフォルト非表示・localStorageで状態保存）
 export const TRACKING_LINES_STORAGE_KEY = "piarno_show_tracking_lines";
 export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) === "true";
+
+// ==========================================================================
+// BlanchTouch 実験用設定・判定モード管理
+// ==========================================================================
+export const DETECTION_MODES = {
+  LEGACY: "legacy",
+  BLANCH_ONLY: "blanch_only",
+  HYBRID: "hybrid"
+};
+
+// Hybridモードの結合ルール（後からOR条件や従来判定フォールバックへ容易に切替可能）
+export const HYBRID_COMBINE_RULES = {
+  AND: "AND",
+  OR: "OR",
+  LEGACY_FALLBACK: "LEGACY_FALLBACK"
+};
+const HYBRID_COMBINE_RULE = HYBRID_COMBINE_RULES.AND;
+const HYBRID_RY_PROXIMITY_RATIO = 0.85;
+
+// フリーセッションモード（曲演奏を無効化し、人差し指の色変化のみをテスト検証）
+export const IS_FREE_SESSION = true;
+const FREE_SESSION_FINGER_KEY = "INDEX";
+const FREE_SESSION_NOTE = "D4";
+const FREE_SESSION_NOTE_LABEL = "レ";
+
+const BLANCH_STORAGE_KEYS = {
+  MODE: IS_FREE_SESSION ? "piarno_free_detection_mode" : "piarno_detection_mode",
+  THRESHOLD: "piarno_blanch_threshold",
+  ROI_SIZE: "piarno_blanch_roi_size",
+  SMOOTHING: "piarno_blanch_smoothing"
+};
+
+const BLANCH_DEFAULTS = {
+  // テスト段階では位置・速度判定をオフにし、色変化（ブランチング）のみで判定
+  mode: IS_FREE_SESSION ? DETECTION_MODES.BLANCH_ONLY : DETECTION_MODES.HYBRID,
+  onThreshold: 3.5,
+  roiSize: 24,
+  smoothingAlpha: 0.35
+};
+
+function loadSavedNumber(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const val = parseFloat(raw);
+    return Number.isFinite(val) ? val : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+let detectionMode = (() => {
+  try {
+    const saved = localStorage.getItem(BLANCH_STORAGE_KEYS.MODE);
+    return Object.values(DETECTION_MODES).includes(saved) ? saved : BLANCH_DEFAULTS.mode;
+  } catch {
+    return BLANCH_DEFAULTS.mode;
+  }
+})();
+
+const blanchDetector = new BlanchDetector({
+  onThreshold: loadSavedNumber(BLANCH_STORAGE_KEYS.THRESHOLD, BLANCH_DEFAULTS.onThreshold),
+  roiSize: loadSavedNumber(BLANCH_STORAGE_KEYS.ROI_SIZE, BLANCH_DEFAULTS.roiSize),
+  smoothingAlpha: loadSavedNumber(BLANCH_STORAGE_KEYS.SMOOTHING, BLANCH_DEFAULTS.smoothingAlpha)
+});
+
+// テスト段階ではデバッグオーバーレイを初期表示（?debug=0 指定時は非表示）
+let isBlanchDebugVisible = (() => {
+  const param = new URLSearchParams(window.location.search).get("debug");
+  if (param === "0") return false;
+  if (param === "1") return true;
+  return IS_FREE_SESSION;
+})();
+
+/**
+ * モード別の打鍵トリガー判定（IDLE -> TOUCHED）
+ * @returns {boolean}
+ */
+function evaluateTapTrigger(mode, currentRy, hitRyTh, tipVy, hitVyTh, blanchResult) {
+  const legacyHit = currentRy >= hitRyTh && tipVy >= hitVyTh;
+  const blanchHit = Boolean(blanchResult && blanchResult.valid && blanchResult.isBlanching);
+
+  if (mode === DETECTION_MODES.LEGACY) {
+    return legacyHit;
+  }
+  if (mode === DETECTION_MODES.BLANCH_ONLY) {
+    return blanchHit;
+  }
+
+  // Hybridモード（デフォルト: 誤爆防止優先のAND条件）
+  if (HYBRID_COMBINE_RULE === HYBRID_COMBINE_RULES.OR) {
+    return legacyHit || blanchHit;
+  }
+  if (HYBRID_COMBINE_RULE === HYBRID_COMBINE_RULES.LEGACY_FALLBACK) {
+    return blanchHit ? (currentRy >= hitRyTh * HYBRID_RY_PROXIMITY_RATIO) : legacyHit;
+  }
+  // AND条件: 指が鍵盤付近にある（従来変位閾値の近傍）かつ ブランチング検出
+  const isNearKeybed = currentRy >= hitRyTh * HYBRID_RY_PROXIMITY_RATIO;
+  return isNearKeybed && blanchHit;
+}
+
+/**
+ * モード別のリフト復帰判定（TOUCHED -> IDLE）
+ * @returns {boolean}
+ */
+function evaluateLiftTrigger(mode, currentRy, hitRyTh, liftRyTh, tipVy, blanchResult) {
+  const isLiftByPosition = currentRy <= liftRyTh;
+  const isLiftByRebound = tipVy <= -100 && currentRy <= (hitRyTh - 0.02);
+  const legacyLift = isLiftByPosition || isLiftByRebound;
+  const blanchLift = Boolean(blanchResult && !blanchResult.isBlanching);
+
+  if (mode === DETECTION_MODES.LEGACY) {
+    return legacyLift;
+  }
+  if (mode === DETECTION_MODES.BLANCH_ONLY) {
+    return blanchLift;
+  }
+
+  // Hybridモード: AND時はどちらかが復帰すればIDLEへ戻し連続打鍵に備える
+  if (HYBRID_COMBINE_RULE === HYBRID_COMBINE_RULES.OR) {
+    return legacyLift && blanchLift;
+  }
+  return legacyLift || blanchLift;
+}
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -721,7 +846,7 @@ export const SONGS = {
 export let currentSongId = "ode_to_joy";
 export let currentSequence = SONGS.ode_to_joy.sequence;
 export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
-export let currentFingerKey = currentSequence[0].fingerKey; // 初期ターゲット指: MIDDLE (3: ミ)
+export let currentFingerKey = IS_FREE_SESSION ? FREE_SESSION_FINGER_KEY : currentSequence[0].fingerKey; // 初期ターゲット指
 
 // 3秒カウントダウン状態管理
 export let isCountingDown = false;
@@ -974,6 +1099,9 @@ export function setTargetFinger(fingerKey) {
   // 指別学習モデルの閾値を適用
   applyFingerThreshold(fingerKey);
 
+  // 指が切り替わったらブランチング基準値をリセット（異なる指の肌色混同防止）
+  blanchDetector.resetBaseline();
+
   console.log(`[FINGER TARGET] ターゲット指: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
 }
 
@@ -1006,6 +1134,23 @@ export function updateHandGuideWidget(fingerKey, fingerNum, note) {
  * 楽曲進行とターゲット指UIの更新
  */
 export function renderSongGuideUI() {
+  if (IS_FREE_SESSION) {
+    // フリーセッション時は人差し指（2: レ）固定でハイライトし、曲進捗は非表示にする
+    updateHandGuideWidget(FREE_SESSION_FINGER_KEY, 2, FREE_SESSION_NOTE_LABEL);
+    if (targetFingerVal) {
+      const fingerName = FINGER_NAMES[FREE_SESSION_FINGER_KEY] || FREE_SESSION_FINGER_KEY;
+      targetFingerVal.textContent = `右手 2 ${FREE_SESSION_NOTE_LABEL} (${fingerName})`;
+    }
+    if (targetTapProgress) {
+      targetTapProgress.textContent = "FREE";
+    }
+    if (songProgressBadge) {
+      songProgressBadge.textContent = "FREE";
+      songProgressBadge.classList.add("hidden");
+    }
+    return;
+  }
+
   const currentItem = currentSequence[currentSongStep];
   if (!currentItem) return;
 
@@ -1036,7 +1181,7 @@ export function renderSongGuideUI() {
  * @param {number} stepIndex
  */
 export function getTargetFingerColor(stepIndex) {
-  const current = currentSequence[stepIndex];
+  const current = IS_FREE_SESSION ? null : currentSequence[stepIndex];
   if (!current) {
     return {
       stroke: "rgba(0, 229, 255, 0.95)",
@@ -1171,7 +1316,7 @@ const noteHitParticles = [];
  * @param {number} stepIndex
  */
 export function triggerNoteHitEffect(stepIndex) {
-  const item = currentSequence[stepIndex];
+  const item = IS_FREE_SESSION ? { fingerKey: FREE_SESSION_FINGER_KEY } : currentSequence[stepIndex];
   if (!item) return;
   const targetPos = getGuideFingerScreenPos(item.fingerKey);
   const color = getTargetFingerColor(stepIndex);
@@ -1249,8 +1394,8 @@ function updateAndRenderNotes() {
     notesCtx.stroke();
   });
 
-  // 2. カウントダウン中や完走中以外の時、ノーツを描画
-  if (currentSequence && currentSequence.length > 0 && !isClearing) {
+  // 2. カウントダウン中や完走中・フリーセッション中以外の時、ノーツを描画
+  if (!IS_FREE_SESSION && currentSequence && currentSequence.length > 0 && !isClearing) {
     // 現在のステップから最大4音先までを逆順で描画（先頭ノーツを手前に表示）
     const maxAhead = 4;
     for (let i = maxAhead - 1; i >= 0; i--) {
@@ -1839,8 +1984,14 @@ async function handleStartPlay() {
       await initHandLandmarker();
     }
 
-    // 選択された曲をセット（カウントダウンはカメラ起動後に行うため false）
-    selectSong(selectedStartSongId, false);
+    if (IS_FREE_SESSION) {
+      // フリーセッション時は人差し指（INDEX）固定で初期化
+      setTargetFinger(FREE_SESSION_FINGER_KEY);
+      renderSongGuideUI();
+    } else {
+      // 選択された曲をセット（カウントダウンはカメラ起動後に行うため false）
+      selectSong(selectedStartSongId, false);
+    }
 
     // 2. インカメラの起動（ユーザー操作コンテキスト内での実行）
     updateStatus("インカメラ起動中...");
@@ -1851,11 +2002,15 @@ async function handleStartPlay() {
       startModal.classList.add("hidden");
     }
 
-    // 4. カウントダウン（3・2・1・START!）を開始して演奏へ移行
+    // 4. フリーセッション時はカウントダウンなしで即開始、曲モード時はカウントダウン開始
     await requestWakeLock();
-    startCountdown(() => {
-      console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
-    });
+    if (IS_FREE_SESSION) {
+      console.log("[START] フリーセッション開始 (ターゲット: 人差し指 / BlanchOnly)");
+    } else {
+      startCountdown(() => {
+        console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
+      });
+    }
   } catch (error) {
     console.error("起動エラー:", error);
     startPlayBtn.disabled = false;
@@ -1873,9 +2028,13 @@ async function handleStartPlay() {
           schedulePredictLoop();
           await requestWakeLock();
           if (startModal) startModal.classList.add("hidden");
-          startCountdown(() => {
-            console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
-          });
+          if (IS_FREE_SESSION) {
+            console.log("[START] フリーセッション開始 (ターゲット: 人差し指 / BlanchOnly)");
+          } else {
+            startCountdown(() => {
+              console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
+            });
+          }
           updateStatus("トラッキング中");
         } catch (retryErr) {
           console.error("タップ後のカメラ起動エラー:", retryErr);
@@ -2533,6 +2692,7 @@ function drawRawHandLandmarks(results) {
       lastRawLandmarks = null;
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       lastFilteredFingerKey = null; // ★完全ロスト時は平滑化対象指もリセット
+      blanchDetector.resetBaseline();
       resetDebugMetrics();
       return;
     }
@@ -2613,11 +2773,33 @@ function drawRawHandLandmarks(results) {
   const tipVy = tipFilter ? tipFilter.getVelocityY() : 0;
   const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 200;
 
-  // 3. レベル2打鍵認識（変位 ＋ 平滑化下降速度ゲートにより机面静止待機誤爆を完全遮断）
+  // 2.5 BlanchTouch 指先ROI色変化解析（Blanch/Hybridモード時、またはデバッグ表示ON時のみ実行）
+  const shouldRunBlanch = detectionMode !== DETECTION_MODES.LEGACY || isBlanchDebugVisible;
+  const blanchResult = shouldRunBlanch
+    ? blanchDetector.processFrame(
+        video,
+        landmarks[fingerConfig.tipIdx],
+        landmarks[fingerConfig.p3Idx],
+        tapState === "IDLE"
+      )
+    : null;
+
+  if (isBlanchDebugVisible && blanchResult) {
+    updateBlanchDebugOverlay(blanchResult);
+  }
+
+  // 3. 打鍵認識（Legacy / BlanchOnly / Hybrid モード対応）
   // カウントダウン中（3・2・1）、完走クリア演出中、および画面外復帰初フレームは打鍵認識を安全にスキップ
   if (tapState === "IDLE" && !isCountingDown && !isClearing && !isReacquired) {
-    // 平滑化変位が打鍵閾値以上 かつ 下降速度が速度閾値以上（勢いよく振り下ろされた瞬間）
-    if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
+    const isTapTriggered = evaluateTapTrigger(
+      detectionMode,
+      currentRy,
+      hitRyThreshold,
+      tipVy,
+      hitVyThreshold,
+      blanchResult
+    );
+    if (isTapTriggered) {
       tapState = "TOUCHED";
 
       // 該当指先でノーツHIT弾けエフェクトを発火
@@ -2632,59 +2814,66 @@ function drawRawHandLandmarks(results) {
         }, 160);
       }
 
-      // 現在の音符を取得
-      const currentTarget = currentSequence[currentSongStep];
-
-      // 右手正解メロディ音を発音（クリアなアタック）
-      playTapSound(currentTarget.rightNote || currentTarget.freq, true, {
-        duration: "2n",
-        isBass: false
-      });
-
-      // 楽譜通りの左手自動伴奏（単音または和音）が設定されている場合は重ねて自動発音
-      if (currentTarget.autoLeftNote) {
-        playTapSound(currentTarget.autoLeftNote, false, {
-          duration: "1m",
-          isBass: true
+      if (IS_FREE_SESSION) {
+        // フリーセッション：人差し指の単音（D4）を発音し、ステップ進行や完走処理は行わない
+        playTapSound(FREE_SESSION_NOTE, true, {
+          duration: "2n",
+          isBass: false
         });
-      }
-      updateStateHud("TOUCHED", true);
-
-      console.log(
-        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, vy=${tipVy.toFixed(0)} >= V_TH:${hitVyThreshold}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
-      );
-
-      const isLastStep = currentSongStep === currentSequence.length - 1;
-
-      if (isLastStep) {
-        // 完走時：白黒ミニマルクリア通知（約1.5秒間）を表示後、インデックス0（第1音）へ自動ループ復帰
-        console.log(`[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`);
-        showClearNotification(() => {
-          currentSongStep = 0;
-          noteProgressMap.clear();
-          const resetTarget = currentSequence[0];
-          setTargetFinger(resetTarget.fingerKey);
-          renderSongGuideUI();
-          console.log(`[SONG LOOP] 第1音 (${resetTarget.note} / ${resetTarget.fingerKey}) へリセット完了`);
-        });
+        updateStateHud("TOUCHED", true);
+        console.log(
+          `[FREE HIT] [${detectionMode}] 指:人差し指(${FREE_SESSION_NOTE}) blanchScore=${blanchResult ? blanchResult.smoothScore.toFixed(2) : "-"}`
+        );
       } else {
-        // 通常進行：次の音符へステップ進行
-        currentSongStep = currentSongStep + 1;
-        const nextTarget = currentSequence[currentSongStep];
+        // 現在の音符を取得
+        const currentTarget = currentSequence[currentSongStep];
 
-        // 次のターゲット指へ自動切り替えとガイド更新
-        setTargetFinger(nextTarget.fingerKey);
-        renderSongGuideUI();
+        // 右手正解メロディ音を発音（クリアなアタック）
+        playTapSound(currentTarget.rightNote || currentTarget.freq, true, {
+          duration: "2n",
+          isBass: false
+        });
+
+        // 楽譜通りの左手自動伴奏（単音または和音）が設定されている場合は重ねて自動発音
+        if (currentTarget.autoLeftNote) {
+          playTapSound(currentTarget.autoLeftNote, false, {
+            duration: "1m",
+            isBass: true
+          });
+        }
+        updateStateHud("TOUCHED", true);
+
+        console.log(
+          `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, vy=${tipVy.toFixed(0)} >= V_TH:${hitVyThreshold}${currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
+        );
+
+        const isLastStep = currentSongStep === currentSequence.length - 1;
+
+        if (isLastStep) {
+          // 完走時：白黒ミニマルクリア通知（約1.5秒間）を表示後、インデックス0（第1音）へ自動ループ復帰
+          console.log(`[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`);
+          showClearNotification(() => {
+            currentSongStep = 0;
+            noteProgressMap.clear();
+            const resetTarget = currentSequence[0];
+            setTargetFinger(resetTarget.fingerKey);
+            renderSongGuideUI();
+            console.log(`[SONG LOOP] 第1音 (${resetTarget.note} / ${resetTarget.fingerKey}) へリセット完了`);
+          });
+        } else {
+          // 通常進行：次の音符へステップ進行
+          currentSongStep = currentSongStep + 1;
+          const nextTarget = currentSequence[currentSongStep];
+
+          // 次のターゲット指へ自動切り替えとガイド更新
+          setTargetFinger(nextTarget.fingerKey);
+          renderSongGuideUI();
+        }
       }
     }
   } else if (tapState === "TOUCHED") {
-    // 指のリフト復帰：
-    // 1. 変位がリフト閾値を下回った場合（通常の位置復帰）
-    // 2. または、指先が上向きにリバウンド反転（tipVy <= -100 px/s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
-    const isLiftByPosition = currentRy <= liftRyThreshold;
-    const isLiftByRebound = tipVy <= -100 && currentRy <= (hitRyThreshold - 0.02);
-
-    if (isLiftByPosition || isLiftByRebound) {
+    // 指のリフト復帰（モード別に判定）
+    if (evaluateLiftTrigger(detectionMode, currentRy, hitRyThreshold, liftRyThreshold, tipVy, blanchResult)) {
       tapState = "IDLE";
       updateStateHud("IDLE", false);
     }
@@ -3191,6 +3380,184 @@ if (trackingLineToggleBtn) {
       // localStorage制限環境用フォールバック
     }
     updateBtnUI();
+  });
+}
+
+// ==========================================================================
+// BlanchTouch 実験用デバッグオーバーレイ制御
+// ==========================================================================
+const blanchDebugToggleBtn = document.getElementById("blanch-debug-toggle-btn");
+const blanchDebugOverlay = document.getElementById("blanch-debug-overlay");
+const blanchRoiPreview = document.getElementById("blanch-roi-preview");
+const blanchStatePill = document.getElementById("blanch-state-pill");
+const blanchScoreVal = document.getElementById("blanch-score-val");
+const blanchThDisplay = document.getElementById("blanch-th-display");
+const blanchDaVal = document.getElementById("blanch-da-val");
+const blanchDlVal = document.getElementById("blanch-dl-val");
+const blanchBarFill = document.getElementById("blanch-bar-fill");
+const blanchBarOnMarker = document.getElementById("blanch-bar-on-marker");
+const blanchBarOffMarker = document.getElementById("blanch-bar-off-marker");
+const blanchThSlider = document.getElementById("blanch-th-slider");
+const blanchThVal = document.getElementById("blanch-th-val");
+const blanchRoiSlider = document.getElementById("blanch-roi-slider");
+const blanchRoiVal = document.getElementById("blanch-roi-val");
+const blanchEmaSlider = document.getElementById("blanch-ema-slider");
+const blanchEmaVal = document.getElementById("blanch-ema-val");
+const blanchResetBtn = document.getElementById("blanch-reset-btn");
+const blanchCloseBtn = document.getElementById("blanch-close-btn");
+const blanchModeBtns = document.querySelectorAll(".blanch-mode-btn");
+
+const BLANCH_BAR_MAX_SCORE = 12.0;
+
+/**
+ * 検証用デバッグオーバーレイのリアルタイム表示更新
+ * @param {object} result BlanchDetector.processFrame の返却値
+ */
+function updateBlanchDebugOverlay(result) {
+  if (!isBlanchDebugVisible || !result) return;
+
+  if (blanchRoiPreview) {
+    blanchDetector.renderPreview(blanchRoiPreview);
+  }
+  if (blanchScoreVal) {
+    blanchScoreVal.textContent = result.smoothScore.toFixed(2);
+  }
+  if (blanchDaVal) {
+    blanchDaVal.textContent = (result.deltaA >= 0 ? "+" : "") + result.deltaA.toFixed(2);
+  }
+  if (blanchDlVal) {
+    blanchDlVal.textContent = (result.deltaL >= 0 ? "+" : "") + result.deltaL.toFixed(2);
+  }
+  if (blanchStatePill) {
+    blanchStatePill.textContent = result.isBlanching ? "BLANCH" : "IDLE";
+    blanchStatePill.classList.toggle("active", result.isBlanching);
+  }
+  if (blanchBarFill) {
+    const pct = Math.min(100, Math.max(0, (result.smoothScore / BLANCH_BAR_MAX_SCORE) * 100));
+    blanchBarFill.style.width = `${pct.toFixed(1)}%`;
+  }
+  if (blanchBarOnMarker) {
+    const onPct = Math.min(100, Math.max(0, (result.onThreshold / BLANCH_BAR_MAX_SCORE) * 100));
+    blanchBarOnMarker.style.left = `${onPct.toFixed(1)}%`;
+  }
+  if (blanchBarOffMarker) {
+    const offPct = Math.min(100, Math.max(0, (result.offThreshold / BLANCH_BAR_MAX_SCORE) * 100));
+    blanchBarOffMarker.style.left = `${offPct.toFixed(1)}%`;
+  }
+}
+
+function syncBlanchControlUI() {
+  if (blanchDebugOverlay) {
+    blanchDebugOverlay.classList.toggle("hidden", !isBlanchDebugVisible);
+  }
+  if (blanchDebugToggleBtn) {
+    blanchDebugToggleBtn.classList.toggle("off", !isBlanchDebugVisible);
+    blanchDebugToggleBtn.setAttribute("aria-pressed", isBlanchDebugVisible.toString());
+  }
+  blanchModeBtns.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === detectionMode);
+  });
+  if (blanchThSlider && blanchThVal && blanchThDisplay) {
+    blanchThSlider.value = blanchDetector.onThreshold.toFixed(1);
+    blanchThVal.textContent = blanchDetector.onThreshold.toFixed(1);
+    blanchThDisplay.textContent = blanchDetector.onThreshold.toFixed(1);
+  }
+  if (blanchRoiSlider && blanchRoiVal) {
+    blanchRoiSlider.value = String(blanchDetector.roiSize);
+    blanchRoiVal.textContent = `${blanchDetector.roiSize}px`;
+  }
+  if (blanchEmaSlider && blanchEmaVal) {
+    blanchEmaSlider.value = blanchDetector.smoothingAlpha.toFixed(2);
+    blanchEmaVal.textContent = blanchDetector.smoothingAlpha.toFixed(2);
+  }
+}
+
+syncBlanchControlUI();
+
+if (blanchDebugToggleBtn) {
+  blanchDebugToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    isBlanchDebugVisible = !isBlanchDebugVisible;
+    syncBlanchControlUI();
+  });
+}
+
+if (blanchCloseBtn) {
+  blanchCloseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    isBlanchDebugVisible = false;
+    syncBlanchControlUI();
+  });
+}
+
+if (blanchResetBtn) {
+  blanchResetBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    blanchDetector.updateSettings({
+      onThreshold: BLANCH_DEFAULTS.onThreshold,
+      roiSize: BLANCH_DEFAULTS.roiSize,
+      smoothingAlpha: BLANCH_DEFAULTS.smoothingAlpha
+    });
+    blanchDetector.resetBaseline();
+    try {
+      localStorage.setItem(BLANCH_STORAGE_KEYS.THRESHOLD, String(BLANCH_DEFAULTS.onThreshold));
+      localStorage.setItem(BLANCH_STORAGE_KEYS.ROI_SIZE, String(BLANCH_DEFAULTS.roiSize));
+      localStorage.setItem(BLANCH_STORAGE_KEYS.SMOOTHING, String(BLANCH_DEFAULTS.smoothingAlpha));
+    } catch {
+      // localStorage制限環境用フォールバック
+    }
+    syncBlanchControlUI();
+  });
+}
+
+blanchModeBtns.forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const nextMode = btn.dataset.mode;
+    if (!Object.values(DETECTION_MODES).includes(nextMode)) return;
+    detectionMode = nextMode;
+    tapState = "IDLE";
+    updateStateHud("IDLE", false);
+    blanchDetector.resetBaseline();
+    try {
+      localStorage.setItem(BLANCH_STORAGE_KEYS.MODE, nextMode);
+    } catch {
+      // localStorage制限環境用フォールバック
+    }
+    syncBlanchControlUI();
+  });
+});
+
+if (blanchThSlider) {
+  blanchThSlider.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    blanchDetector.updateSettings({ onThreshold: val });
+    try {
+      localStorage.setItem(BLANCH_STORAGE_KEYS.THRESHOLD, String(val));
+    } catch {}
+    syncBlanchControlUI();
+  });
+}
+
+if (blanchRoiSlider) {
+  blanchRoiSlider.addEventListener("input", (e) => {
+    const val = parseInt(e.target.value, 10);
+    blanchDetector.updateSettings({ roiSize: val });
+    try {
+      localStorage.setItem(BLANCH_STORAGE_KEYS.ROI_SIZE, String(val));
+    } catch {}
+    syncBlanchControlUI();
+  });
+}
+
+if (blanchEmaSlider) {
+  blanchEmaSlider.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    blanchDetector.updateSettings({ smoothingAlpha: val });
+    try {
+      localStorage.setItem(BLANCH_STORAGE_KEYS.SMOOTHING, String(val));
+    } catch {}
+    syncBlanchControlUI();
   });
 }
 
