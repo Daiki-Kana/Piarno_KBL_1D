@@ -3008,11 +3008,10 @@ export function selectSong(songId, withCountdown = true) {
 }
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
-// minCutoffを0.85Hzに最適化し、静止時・低速時の小刻みなジッター・マーカー震えを強固に吸収
-// betaを0.012に設定して素早いタップ動作にはカットオフを自動で引き上げ遅延ゼロで追従
+// 手首（0）から親指・人差し指・中指・薬指・小指（20）まで全関節を独立して常時平滑化
 const landmarkFilters = Array.from(
   { length: 21 },
-  () => new PointFilter(0.85, 0.012, 1.8),
+  () => new PointFilter(1.2, 0.008),
 );
 
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
@@ -3085,15 +3084,14 @@ export function updateCachedConnections(fingerKey) {
   currentOtherConnections = connections;
 }
 
-// 指ごとの推奨正規化下降速度閾値（基準長/秒 = 手のひら長/秒）
-// 手の大きさやカメラとの距離（拡大・縮小）に依存しないスケール不変な速度判定
-// 手首相殺（相対速度）導入に伴い、軽いタッチでも検知できるよう最適化
+// 指ごとの推奨平滑化下降速度閾値（ピクセル/秒）
+// 打鍵時は急峻な下降（300〜1600 px/s）が発生し、静止待機時（0〜8 px/s）を完全に遮断
 export const FINGER_VY_THRESHOLDS = {
-  THUMB: 1.2,
-  INDEX: 1.4,
-  MIDDLE: 1.4,
-  RING: 1.3,
-  PINKY: 1.3,
+  THUMB: 160,
+  INDEX: 220,
+  MIDDLE: 220,
+  RING: 180,
+  PINKY: 180,
 };
 
 // 指ごとの学習閾値モデル
@@ -4453,8 +4451,8 @@ function isTabletOrSquareScreen() {
   return isAppleTablet || (isTouch && ratio < 1.55);
 }
 
-// 初期表示アスペクト比の設定（iPhone標準カメラアプリと同じ4:3比率を基準に設定）
-const initialAspect = 4 / 3;
+// 初期表示アスペクト比の設定（タブレットは4:3、スマホ・PCは16:9）
+const initialAspect = isTabletOrSquareScreen() ? 4 / 3 : 16 / 9;
 document.documentElement.style.setProperty(
   "--video-aspect",
   initialAspect.toFixed(4),
@@ -4465,77 +4463,136 @@ document.documentElement.style.setProperty(
  */
 async function startFrontCamera() {
   let stream = null;
+  const isTablet = isTabletOrSquareScreen();
 
   console.log(
-    "[CAM] iPhone標準カメラアプリと同じ4:3比率（ネイティブセンサー画角）を最優先で要求",
+    `[CAM] 画面種別: ${isTablet ? "タブレット/4:3端末" : "スマホ/PC (16:9ワイド)"}`,
   );
 
-  // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
-  // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
-  const tryConstraints = [
-    // 1. 480p (640x480, 4:3) 60fps志向（標準カメラ比率・最高レスポンス・低負荷）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 },
-      },
-      audio: false,
-    },
-    // 2. 720p (960x720, 4:3) 60fps志向
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 },
-      },
-      audio: false,
-    },
-    // 3. 480p (640x480, 4:3) 任意fps
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        aspectRatio: { ideal: 4 / 3 },
-      },
-      audio: false,
-    },
-    // 4. 720p (960x720, 4:3) 任意fps
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 4 / 3 },
-      },
-      audio: false,
-    },
-    // 5. 4:3 任意解像度
-    {
-      video: {
-        facingMode: "user",
-        aspectRatio: { ideal: 4 / 3 },
-      },
-      audio: false,
-    },
-    // 6. インカメラ指定のみ
-    {
-      video: {
-        facingMode: "user",
-      },
-      audio: false,
-    },
-    // 7. 最終フォールバック
-    {
-      video: true,
-      audio: false,
-    },
-  ];
+  // タブレット（iPad等）では4:3を優先し、スマホ/PCでは16:9（960x540 / 640x360）を優先
+  const tryConstraints = isTablet
+    ? [
+        // 1. 480p (640x480, 4:3) 60fps志向
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 60 },
+          },
+          audio: false,
+        },
+        // 2. 720p (960x720, 4:3) 60fps志向
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 60 },
+          },
+          audio: false,
+        },
+        // 3. 480p (640x480, 4:3) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 },
+          },
+          audio: false,
+        },
+        // 4. 720p (960x720, 4:3) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 4 / 3 },
+          },
+          audio: false,
+        },
+        // 5. インカメラ指定のみ
+        {
+          video: {
+            facingMode: "user",
+          },
+          audio: false,
+        },
+        // 6. 最終フォールバック
+        {
+          video: true,
+          audio: false,
+        },
+      ]
+    : [
+        // 1. 540p (960x540, 16:9) 60fps志向（PC/スマホ向け・画質と軽量性の最良バランス）
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 },
+          },
+          audio: false,
+        },
+        // 2. 360p (640x360, 16:9) 60fps志向（超軽量・最高レスポンス重視）
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            aspectRatio: { ideal: 16 / 9 },
+            frameRate: { ideal: 60 },
+          },
+          audio: false,
+        },
+        // 3. 360p (640x360, 16:9) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            aspectRatio: { ideal: 16 / 9 },
+          },
+          audio: false,
+        },
+        // 4. 540p (960x540, 16:9) 任意fps
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 960 },
+            height: { ideal: 540 },
+            aspectRatio: { ideal: 16 / 9 },
+          },
+          audio: false,
+        },
+        // 5. 480p (640x480, 4:3) フォールバック
+        {
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            aspectRatio: { ideal: 4 / 3 },
+          },
+          audio: false,
+        },
+        // 6. インカメラ指定のみ
+        {
+          video: {
+            facingMode: "user",
+          },
+          audio: false,
+        },
+        // 7. 最終フォールバック
+        {
+          video: true,
+          audio: false,
+        },
+      ];
 
   let lastError = null;
   for (const constraints of tryConstraints) {
@@ -5277,12 +5334,10 @@ function drawRawHandLandmarks(results) {
   // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
   const targetColor = getTargetFingerColor(currentSongStep);
 
-  // 対象指先端の平滑化下降速度（ピクセル/秒）を取得し、手の基準長（safeBaseDistPx）で正規化（基準長/秒）
-  // これによりカメラとの距離や手の大きさ、画面解像度に依存しないスケール不変な速度判定を実現
+  // 対象指先端の平滑化下降速度（ピクセル/秒）を取得
   const tipFilter = landmarkFilters[fingerConfig.tipIdx];
-  const rawTipVy = tipFilter ? tipFilter.getVelocityY() : 0;
-  const tipVy = rawTipVy / safeBaseDistPx;
-  const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 2.0;
+  const tipVy = tipFilter ? tipFilter.getVelocityY() : 0;
+  const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 200;
   const isStepCooldown = now - lastGlobalHitTime < STEP_HIT_COOLDOWN_MS;
 
   // 3. レベル2打鍵認識（正規化変位 ＋ 正規化下降速度ゲートにより机面静止待機誤爆を完全遮断）
@@ -5383,9 +5438,9 @@ function drawRawHandLandmarks(results) {
   } else if (tapState === "TOUCHED") {
     // 指のリフト復帰：
     // 1. 変位がリフト閾値を下回った場合（通常の位置復帰）
-    // 2. または、指先が上向きにリバウンド反転（正規化速度 tipVy <= -1.0 /s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
+    // 2. または、指先が上向きにリバウンド反転（tipVy <= -100 px/s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
     const isLiftByPosition = currentRy <= liftRyThreshold;
-    const isLiftByRebound = tipVy <= -1.0 && currentRy <= hitRyThreshold - 0.02;
+    const isLiftByRebound = tipVy <= -100 && currentRy <= hitRyThreshold - 0.02;
 
     if (isLiftByPosition || isLiftByRebound) {
       tapState = "IDLE";
