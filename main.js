@@ -4341,7 +4341,7 @@ async function initHandLandmarker() {
 
   for (const modelPath of modelPaths) {
     try {
-      // 推論負荷と遅延を抑えるため片手検出（numHands: 1）に設定
+      // 両手（最大2手）検出し、複数手がある場合でも右手を見落とさないように設定
       // 水平ローアングルでの打鍵時（机面接触・影）の再検出ループを防ぐため追従閾値を適正化
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
@@ -4349,7 +4349,7 @@ async function initHandLandmarker() {
           delegate: "GPU",
         },
         runningMode: "VIDEO",
-        numHands: 1,
+        numHands: 2,
         minHandDetectionConfidence: 0.4,
         minHandPresenceConfidence: 0.4,
         minTrackingConfidence: 0.3,
@@ -4365,7 +4365,7 @@ async function initHandLandmarker() {
             delegate: "CPU",
           },
           runningMode: "VIDEO",
-          numHands: 1,
+          numHands: 2,
           minHandDetectionConfidence: 0.4,
           minHandPresenceConfidence: 0.4,
           minTrackingConfidence: 0.3,
@@ -4831,9 +4831,9 @@ function selectRightHandLandmarks(results) {
       return null;
     }
 
-    // 最も近い手が右手であるかナックル幾何判定（追従中ヒステリシス有効）
-    // （前回の右手位置の至近にある手であっても、明確に左手形状をしている場合は除外）
-    if (!isAnatomicallyRightHand(closestHand, true)) {
+    // 複数手が映っている場合のみナックル幾何判定で左手誤乗り換えを防止
+    // 1本しか検出されていない場合は、角度による誤除外を防ぐためそのまま追従を維持
+    if (hands.length > 1 && !isAnatomicallyRightHand(closestHand, true)) {
       return null;
     }
 
@@ -4848,7 +4848,12 @@ function selectRightHandLandmarks(results) {
   // ========================================================
   // 2. 未追従状態（初回出現時または完全ロスト後の初回復帰時）：
   // ========================================================
-  // ナックル外積により物理的な右手と判定される候補のみを抽出（左手はここで100%除外）
+  // 検出された手が1本だけの場合は角度による誤除外を防ぎそのまま採用
+  if (hands.length === 1) {
+    return hands[0][0].x >= MIN_SAFETY_X ? hands[0] : null;
+  }
+
+  // 複数手がある場合のみナックル外積により物理的な右手候補を抽出
   const rightCandidates = hands.filter((hand) => {
     if (!isAnatomicallyRightHand(hand, false)) return false;
     if (hand[0].x < MIN_SAFETY_X) return false;
