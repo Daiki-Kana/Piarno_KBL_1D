@@ -4367,9 +4367,9 @@ async function initHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 2,
-        minHandDetectionConfidence: 0.4,
-        minHandPresenceConfidence: 0.4,
-        minTrackingConfidence: 0.3,
+        minHandDetectionConfidence: 0.25,
+        minHandPresenceConfidence: 0.25,
+        minTrackingConfidence: 0.2,
       });
       loaded = true;
       break;
@@ -4383,9 +4383,9 @@ async function initHandLandmarker() {
           },
           runningMode: "VIDEO",
           numHands: 2,
-          minHandDetectionConfidence: 0.4,
-          minHandPresenceConfidence: 0.4,
-          minTrackingConfidence: 0.3,
+          minHandDetectionConfidence: 0.25,
+          minHandPresenceConfidence: 0.25,
+          minTrackingConfidence: 0.2,
         });
         loaded = true;
         break;
@@ -4473,23 +4473,23 @@ async function startFrontCamera() {
   // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
   // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
   const tryConstraints = [
-    // 1. 480p (640x480, 4:3) 60fps志向（標準カメラ比率・最高レスポンス・低負荷）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 },
-      },
-      audio: false,
-    },
-    // 2. 720p (960x720, 4:3) 60fps志向
+    // 1. 720p (960x720, 4:3) 60fps志向（指先の検出解像度を最優先）
     {
       video: {
         facingMode: "user",
         width: { ideal: 960 },
         height: { ideal: 720 },
+        aspectRatio: { ideal: 4 / 3 },
+        frameRate: { ideal: 60 },
+      },
+      audio: false,
+    },
+    // 2. 480p (640x480, 4:3) 60fps志向（フォールバック）
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 640 },
+        height: { ideal: 480 },
         aspectRatio: { ideal: 4 / 3 },
         frameRate: { ideal: 60 },
       },
@@ -4728,13 +4728,8 @@ function schedulePredictLoop() {
   if (!isPredicting) return;
 
   if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
-    video.requestVideoFrameCallback((now, metadata) => {
-      // presentationTimeはDOMHighResTimeStamp（ミリ秒単位）のためそのまま使用
-      const frameTime =
-        metadata && typeof metadata.presentationTime === "number"
-          ? metadata.presentationTime
-          : now;
-      processVideoFrame(frameTime);
+    video.requestVideoFrameCallback((now) => {
+      processVideoFrame(now);
       schedulePredictLoop();
     });
   } else {
@@ -4751,16 +4746,15 @@ function schedulePredictLoop() {
   }
 }
 
-// 追従時の最大許容移動距離（正規化座標系：画面幅の25%）
-// 1フレーム（約16ms）で右手手首がこれ以上離れることは物理的にあり得ないため、左手への飛び移りを完全遮断
-const MAX_WRIST_TRACK_DISTANCE = 0.25;
+// 追従時の最大許容移動距離（正規化座標系：画面幅の35%）
+const MAX_WRIST_TRACK_DISTANCE = 0.35;
 
 // ナックル外積の明確な判定閾値（ゼロ近傍の不感帯用）
 const CROSS_RIGHT_THRESHOLD = -0.002;
 const CROSS_LEFT_THRESHOLD = 0.002;
 
-// 画面左端のセーフティ境界（生カメラ画像で x < 0.02 等の極端な欠損フレームのみ除外）
-const MIN_SAFETY_X = 0.02;
+// 画面左端のセーフティ境界（画面端でも途切れないよう0.0に設定）
+const MIN_SAFETY_X = 0.0;
 
 /**
  * 手のひらナックルの幾何学的向き（2Dベクトル外積）による右手判定（ヒステリシス対応）
