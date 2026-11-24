@@ -496,7 +496,7 @@ html, body {
 
 /* 打鍵時の一瞬のポップフィードバック */
 .hand-guide-widget.hit-pop {
-  transform: scale(1.1);
+  transform: translateX(-50%) scale(1.1);
   filter: brightness(1.25);
 }
 
