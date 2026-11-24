@@ -56,15 +56,20 @@ const songProgressBadge = document.getElementById("song-progress-badge");
 const vowelDisplayCard = document.getElementById("vowel-display-card");
 const vowelDisplayText = document.getElementById("vowel-display-text");
 
+let spokenWordBuffer = "";
+
 /**
- * 鳴らした文字（黒四角に白文字）の表示更新とポップ演出
+ * 鳴らした文字（白背景に黒文字）を言葉として連結表示・ポップ演出
  * @param {string} text 例: "あ", "い", "う", "え", "お"
  */
 export function updateVowelDisplay(text) {
+  if (!text) return;
+  spokenWordBuffer += text;
   if (vowelDisplayText) {
-    vowelDisplayText.textContent = text;
+    vowelDisplayText.textContent = spokenWordBuffer;
   }
   if (vowelDisplayCard) {
+    vowelDisplayCard.scrollLeft = vowelDisplayCard.scrollWidth;
     vowelDisplayCard.classList.remove("hit-pop");
     void vowelDisplayCard.offsetWidth; // アニメーション再トリガー
     vowelDisplayCard.classList.add("hit-pop");
@@ -1043,8 +1048,23 @@ export const SAINTS_SEQUENCE = [
   { step: 42, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ド(高)",  rightNote: "C6", freq: 1046.50, beats: 2, autoChord: ["C3", "C4", "C5", "E5"], autoOffbeat: [] }
 ];
 
-// 演奏曲リスト（自分のペースで1音ずつ進めるステップ演奏 ＆ 完全フリーセッション）
+// 親指から1本ずつ順番に選択されていく「あいうえお」リハビリシーケンス
+const AIUEO_STEP_SEQUENCE = [
+  { step: 1, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "あ", rightNote: "C5", freq: 523.25, beats: 1 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "い", rightNote: "D5", freq: 587.33, beats: 1 },
+  { step: 3, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "う", rightNote: "E5", freq: 659.26, beats: 1 },
+  { step: 4, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "え", rightNote: "F5", freq: 698.46, beats: 1 },
+  { step: 5, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "お", rightNote: "G5", freq: 783.99, beats: 1 }
+];
+
+// 演奏曲リスト（親指順ステップ演奏 ＆ フリーセッション）
 export const SONGS = {
+  aiueo_step: {
+    id: "aiueo_step",
+    title: "あいうえお（親指順）",
+    bpm: 100,
+    sequence: AIUEO_STEP_SEQUENCE
+  },
   free_session: {
     id: "free_session",
     title: "フリーセッション (自由演奏)",
@@ -1077,10 +1097,10 @@ export const SONGS = {
   }
 };
 
-export let currentSongId = "free_session";
-export let currentSequence = SONGS.free_session.sequence;
+export let currentSongId = "aiueo_step";
+export let currentSequence = SONGS.aiueo_step.sequence;
 export let currentSongStep = 0; // 現在の進行ステップ (0 〜 sequence.length - 1)
-export let currentFingerKey = "MIDDLE"; // 初期基準指: MIDDLE (3: ミ)
+export let currentFingerKey = "THUMB"; // 初期基準指: THUMB (1: 親指)
 
 // ==========================================
 // 自動伴奏（和音・裏拍）の発音管理
@@ -2489,7 +2509,7 @@ export async function loadTestDataCsv() {
 
 // 先行MediaPipeモデルロード用Promise
 let handLandmarkerPromise = null;
-let selectedStartSongId = "free_session";
+let selectedStartSongId = "aiueo_step";
 
 /**
  * 初期化処理（アプリ内ブラウザ検知を先行）
@@ -2525,8 +2545,8 @@ function prepareApp() {
     });
   }
 
-  // 初期状態でフリーセッションUIをセット
-  selectSong("free_session", false);
+  // 初期状態で親指順ステップセッションUIをセット
+  selectSong("aiueo_step", false);
 
   // 音声バナーは初期状態では隠す（スタートボタン押下で確実に有効化されるため）
   if (audioStartBanner) {

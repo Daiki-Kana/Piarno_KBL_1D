@@ -41,40 +41,34 @@ html, body {
   overflow: hidden;
 }
 
-/* ビデオコンテナ：iPhone標準カメラアプリと同じ4:3比率（縦持ち時3:4）ファインダー配置 */
+/* ビデオコンテナ：画面全体（フルスクリーン）配置 */
 .video-container {
-  position: relative;
+  position: fixed;
+  inset: 0;
   display: block;
-  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算（標準カメラ比率） */
-  width: min(100vw, calc(100vh * var(--video-aspect, 1.3333)));
-  height: min(100vh, calc(100vw / var(--video-aspect, 1.3333)));
-  width: min(100dvw, calc(100dvh * var(--video-aspect, 1.3333)));
-  height: min(100dvh, calc(100dvw / var(--video-aspect, 1.3333)));
-  max-width: 100vw;
-  max-height: 100dvh;
-  max-width: 100dvw;
-  max-height: 100dvh;
+  width: 100%;
+  height: 100%;
   line-height: 0; /* 下部の隙間を排除 */
   overflow: hidden;
 }
 
-/* インカメラ映像：コンテナに合わせてアスペクト比完全同期、クロップ・歪みなし、鏡像反転 */
+/* インカメラ映像：アスペクト比を保ったままフルスクリーン（cover）、鏡像反転 */
 #webcam {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: cover;
   transform: scaleX(-1);
 }
 
-/* 骨格描画Canvas：ビデオと完全に同一矩形・同一比率で重畳、同じく鏡像反転 */
+/* 骨格描画Canvas：ビデオと同一サイズ・同一cover比率で重畳、同じく鏡像反転 */
 #output-canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: cover;
   transform: scaleX(-1);
   pointer-events: none;
 }
@@ -769,24 +763,29 @@ html, body {
 }
 
 /* ==========================================================================
-   画面上部中央：打鍵した文字表示カード（黒四角・白文字・ボーダーレス）
+   画面上部中央：話した文字の連結表示カード（白背景・黒文字・ボーダーレス）
    ========================================================================== */
 .vowel-display-card {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
-  width: 108px;
-  height: 108px;
-  background-color: rgba(18, 18, 18, 0.94);
+  width: auto;
+  min-width: 96px;
+  max-width: min(88vw, 680px);
+  min-height: 76px;
+  padding: 12px 24px;
+  background-color: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: none;
   border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
   z-index: 210;
   pointer-events: none;
   user-select: none;
@@ -794,17 +793,24 @@ html, body {
   transition: transform 0.12s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.15s ease;
 }
 
+.vowel-display-card::-webkit-scrollbar {
+  display: none;
+}
+
 .vowel-display-card.hit-pop {
-  transform: translateX(-50%) scale(1.12);
-  background-color: #000000;
+  transform: translateX(-50%) scale(1.06);
+  background-color: #ffffff;
 }
 
 .vowel-display-text {
-  color: #ffffff;
+  color: #000000;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", sans-serif;
-  font-size: 56px;
+  font-size: 44px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  margin: 0 auto;
   text-align: center;
 }
 
