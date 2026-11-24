@@ -4730,6 +4730,12 @@ function updateCanvasResolution() {
     ) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      // 画面回転等で解像度・縦横が変わった際は古いピクセル座標系をリセットして座標ズレを防止
+      landmarkFilters.forEach((f) => f.reset());
+      hasValidSmoothedLandmarks = false;
+      lastRawLandmarks = null;
+      lastTrackedWrist = null;
+      lastFilteredFingerKey = null;
       console.log(
         `[CANVAS] ビデオ解像度・アスペクト比を完全同期: ${canvas.width}x${canvas.height} (比率 ${aspect.toFixed(3)}:1)`,
       );
@@ -4899,9 +4905,9 @@ function selectRightHandLandmarks(results) {
       }
     }
 
-    // 【要件1: 距離リミッターの無条件適用】
-    // 候補数に関わらず、前回の右手位置から画面幅25%以上離れている手は絶対に採用しない（左手へのワープを100%遮断）
-    if (minDistance > MAX_WRIST_TRACK_DISTANCE) {
+    // 複数手が映っている場合のみ距離リミッターで左手への飛び移りを遮断
+    // 1本しか検出されていない場合は、素早い移動や復帰後に6フレーム拒絶→急ワープする現象を防ぐため即追従
+    if (hands.length > 1 && minDistance > MAX_WRIST_TRACK_DISTANCE) {
       return null;
     }
 
@@ -5032,8 +5038,9 @@ function drawRawHandLandmarks(results) {
   // 追従中の右手手首の生正規化座標で lastTrackedWrist を毎フレーム更新
   lastTrackedWrist = { x: landmarks[0].x, y: landmarks[0].y };
 
-  // 全21関節点を独立適応平滑化（1 Euro Filter ＋ 異常値ワープクランプ）
+  // 全21関節点を独立適応平滑化（mainブランチ同様の素直な 1 Euro Filter ＋ 指切替時スナップ）
   if (hasHands) {
+    const isFingerChanged = lastFilteredFingerKey !== currentFingerKey;
     if (isReacquired) {
       for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
@@ -5046,42 +5053,29 @@ function drawRawHandLandmarks(results) {
       }
       lastFilteredFingerKey = currentFingerKey;
     } else {
-      // 手の基準スケール（前フレーム手首と中指付け根の距離）を基に1フレームあたりの最大許容移動距離を算出
-      const prevWrist = smoothedLandmarksPool[0];
-      const prevMiddleMcp = smoothedLandmarksPool[9];
-      const handScalePx =
-        Math.hypot(
-          prevMiddleMcp.x - prevWrist.x,
-          prevMiddleMcp.y - prevWrist.y,
-        ) || height * 0.2;
-      // 1フレーム（約16〜33ms）での物理的上限距離（手のひら長の35%、かつ最低25px）
-      // 打鍵時や影によるAI検出の瞬間的な座標ワープ（マーカー飛び）を確実に抑制
-      const maxAllowedJumpPx = Math.max(25, handScalePx * 0.35);
-
       for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
         const targetX = raw.x * width;
         const targetY = raw.y * height;
-        const prevPt = smoothedLandmarksPool[i];
-
-        const dx = targetX - prevPt.x;
-        const dy = targetY - prevPt.y;
-        const dist = Math.hypot(dx, dy);
-
-        let inputX = targetX;
-        let inputY = targetY;
-        if (dist > maxAllowedJumpPx) {
-          const ratio = maxAllowedJumpPx / dist;
-          inputX = prevPt.x + dx * ratio;
-          inputY = prevPt.y + dy * ratio;
+        // 指切り替え初フレームは対象指の関節を即座にスナップし、過去座標の引きずりを排除
+        if (isFingerChanged && activeJointIndices.includes(i)) {
+          landmarkFilters[i].snap(
+            targetX,
+            targetY,
+            now,
+            smoothedLandmarksPool[i],
+          );
+        } else {
+          landmarkFilters[i].filter(
+            targetX,
+            targetY,
+            now,
+            smoothedLandmarksPool[i],
+          );
         }
-
-        landmarkFilters[i].filter(
-          inputX,
-          inputY,
-          now,
-          smoothedLandmarksPool[i],
-        );
+      }
+      if (isFingerChanged) {
+        lastFilteredFingerKey = currentFingerKey;
       }
     }
     hasValidSmoothedLandmarks = true;
