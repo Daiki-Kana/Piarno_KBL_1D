@@ -794,7 +794,7 @@ html, body {
 }
 
 /* ==========================================================================
-   画面上部中央：話した文字の連結表示カード（淡いグレー面・黒文字・ボーダーレス）
+   画面上部中央：話した文字の連結表示（背景ボックスなし・黒文字のみ）
    ========================================================================== */
 .vowel-display-card {
   position: absolute;
@@ -802,13 +802,11 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   width: auto;
-  min-width: 128px;
   max-width: min(92vw, 860px);
-  min-height: 112px;
-  padding: 18px 36px;
-  background-color: #f2f2f4;
+  padding: 4px 16px;
+  background-color: transparent;
   border: none;
-  border-radius: 20px;
+  border-radius: 0;
   box-shadow: none;
   display: flex;
   align-items: center;
@@ -819,7 +817,7 @@ html, body {
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.14s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease, color 0.2s ease;
+  transition: transform 0.14s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .vowel-display-card::-webkit-scrollbar {
@@ -828,16 +826,16 @@ html, body {
 
 .vowel-display-card.hit-pop {
   transform: translateX(-50%) scale(1.06);
-  background-color: #e6e6ea;
+  background-color: transparent;
 }
 
 .vowel-display-card.is-complete {
   transform: translateX(-50%) scale(1.08);
-  background-color: #000000;
+  background-color: transparent;
 }
 
 .vowel-display-card.is-complete .vowel-display-text {
-  color: #ffffff;
+  color: #000000;
 }
 
 .vowel-display-text {

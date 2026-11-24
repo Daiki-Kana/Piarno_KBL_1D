@@ -83,12 +83,12 @@ export function updateVowelDisplay(text) {
 }
 
 /**
- * 連結表示された文字バッファを初期状態（"-"）へリセットする
+ * 連結表示された文字バッファを空へリセットする
  */
 export function resetVowelDisplay() {
   spokenWordBuffer = "";
   if (vowelDisplayText) {
-    vowelDisplayText.textContent = "-";
+    vowelDisplayText.textContent = "";
   }
   if (vowelDisplayCard) {
     vowelDisplayCard.classList.remove("is-complete");
