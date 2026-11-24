@@ -407,20 +407,22 @@ html, body {
    右手運指ガイドウィジェット（文字カード下・中央寄りに限界サイズで配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-size: clamp(220px, min(calc(100dvh - 135px), calc(100vw - 40px)), 480px);
+  --hand-guide-height: clamp(180px, calc(100dvh - 155px), 480px);
   position: absolute;
   left: 50%;
   right: auto;
-  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  bottom: 0;
   top: auto;
   transform: translateX(-50%);
-  width: var(--hand-guide-size, 280px);
-  height: var(--hand-guide-size, 280px);
+  height: var(--hand-guide-height);
+  width: auto;
+  aspect-ratio: 134 / 156;
+  max-width: calc(100vw - 32px);
   background: transparent;
   border: none;
   box-shadow: none;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   user-select: none;
   -webkit-user-select: none;
@@ -465,8 +467,6 @@ html, body {
   display: block;
   pointer-events: none;
   overflow: visible;
-  transform: scale(1.18);
-  transform-origin: center bottom;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
 }
 
