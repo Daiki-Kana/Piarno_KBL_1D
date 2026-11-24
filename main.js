@@ -1356,9 +1356,9 @@ export function selectSong(songId, withCountdown = true) {
 }
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
-// minCutoffを0.85Hzに最適化し、静止時・低速時の小刻みなジッター・マーカー震えを強固に吸収
-// betaを0.012に設定して素早いタップ動作にはカットオフを自動で引き上げ遅延ゼロで追従
-const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(0.85, 0.012, 1.8));
+// minCutoffを2.2Hzに設定して静止時の小刻みなジッターを抑えつつ、
+// betaを0.05に引き上げて素早いタップ動作への追従遅延を大幅に低減
+const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(2.2, 0.05, 2.0));
 
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
 const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
@@ -2652,7 +2652,7 @@ async function initHandLandmarker() {
 
   for (const modelPath of modelPaths) {
     try {
-      // 画面内に左手が存在していても右手を見落とさず確実に追従・ロックするため両手（最大2手）検出を有効化
+      // 推論負荷と遅延を抑えるため片手検出（numHands: 1）に設定
       // 水平ローアングルでの打鍵時（机面接触・影）の再検出ループを防ぐため追従閾値を適正化
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
@@ -2660,7 +2660,7 @@ async function initHandLandmarker() {
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        numHands: 2,
+        numHands: 1,
         minHandDetectionConfidence: 0.4,
         minHandPresenceConfidence: 0.4,
         minTrackingConfidence: 0.3
@@ -2676,7 +2676,7 @@ async function initHandLandmarker() {
             delegate: "CPU"
           },
           runningMode: "VIDEO",
-          numHands: 2,
+          numHands: 1,
           minHandDetectionConfidence: 0.4,
           minHandPresenceConfidence: 0.4,
           minTrackingConfidence: 0.3
@@ -2989,7 +2989,10 @@ function schedulePredictLoop() {
 
   if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
     video.requestVideoFrameCallback((now, metadata) => {
-      const frameTime = (metadata && metadata.presentationTime) ? metadata.presentationTime * 1000 : now;
+      // presentationTimeはDOMHighResTimeStamp（ミリ秒単位）のためそのまま使用
+      const frameTime = (metadata && typeof metadata.presentationTime === "number")
+        ? metadata.presentationTime
+        : now;
       processVideoFrame(frameTime);
       schedulePredictLoop();
     });
