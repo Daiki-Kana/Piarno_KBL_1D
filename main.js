@@ -431,9 +431,8 @@ function initPianoSampler() {
   }
 }
 
-// サンプラーの初期化を実行
-initPianoSampler();
-// 高齢者リハビリ用「あ・い・う・え・お」音声の事前フェッチ開始
+// ピアノサンプラーは言葉発声モードでは未使用のため初期化をスキップ（通信・デコード・Reverb負荷を削減）
+// 高齢者リハビリ用「あ・い・う・え・お」等の音声事前フェッチ開始
 loadVoiceBuffers().catch(() => {});
 
 // 学習済みCSVから自動導出される閾値モデル（デフォルト値付き）
@@ -3826,8 +3825,8 @@ function _unusedUpdateAndRenderNotes() {
   requestAnimationFrame(updateAndRenderNotes);
 }
 
-// ノーツ描画ループを開始
-requestAnimationFrame(updateAndRenderNotes);
+// ノーツは非表示のため、描画ループは起動しない
+// requestAnimationFrame(updateAndRenderNotes);
 
 /**
  * 指定指の学習済み閾値をアクティブ閾値にセット
@@ -4739,42 +4738,48 @@ function updateCanvasResolution() {
 }
 
 let lastVideoTimestamp = -1;
+let isInferringFrame = false;
 
 /**
  * 毎フレームの推論処理（単一フレーム）
  * @param {number} frameTime
  */
 function processVideoFrame(frameTime) {
-  if (!isPredicting) return;
+  if (!isPredicting || isInferringFrame) return;
+  isInferringFrame = true;
 
-  // カメラ解像度とCanvas解像度の完全一致を常時保証（iPadの向き変更・比率変更時の座標ズレ防止）
-  if (
-    video.videoWidth &&
-    (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)
-  ) {
-    updateCanvasResolution();
+  try {
+    // カメラ解像度とCanvas解像度の完全一致を常時保証（iPadの向き変更・比率変更時の座標ズレ防止）
+    if (
+      video.videoWidth &&
+      (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)
+    ) {
+      updateCanvasResolution();
+    }
+
+    // 正確なフレーム時間をミリ秒で算出（MediaPipe VIDEOモードが要求する厳密な単調増加を保証）
+    const now = typeof frameTime === "number" ? frameTime : performance.now();
+    const timestampMs = Math.max(now, lastVideoTimestamp + 1.0);
+    lastVideoTimestamp = timestampMs;
+
+    const startTime = performance.now();
+
+    // VIDEOモードでの同期推論（正確なタイムスタンプにより内部トラッキング予測器が安定化）
+    const results = handLandmarker.detectForVideo(video, timestampMs);
+
+    const calcDuration = performance.now() - startTime;
+    if (isDebugPanelVisible) {
+      inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
+    }
+
+    // 生ランドマーク座標の直接描画
+    drawRawHandLandmarks(results);
+
+    // FPS更新
+    updateFps();
+  } finally {
+    isInferringFrame = false;
   }
-
-  // 正確なフレーム時間をミリ秒で算出（MediaPipe VIDEOモードが要求する厳密な単調増加を保証）
-  const now = typeof frameTime === "number" ? frameTime : performance.now();
-  const timestampMs = Math.max(now, lastVideoTimestamp + 1.0);
-  lastVideoTimestamp = timestampMs;
-
-  const startTime = performance.now();
-
-  // VIDEOモードでの同期推論（正確なタイムスタンプにより内部トラッキング予測器が安定化）
-  const results = handLandmarker.detectForVideo(video, timestampMs);
-
-  const calcDuration = performance.now() - startTime;
-  if (isDebugPanelVisible) {
-    inferenceTime.textContent = `${calcDuration.toFixed(1)} ms`;
-  }
-
-  // 生ランドマーク座標の直接描画
-  drawRawHandLandmarks(results);
-
-  // FPS更新
-  updateFps();
 }
 
 /**
