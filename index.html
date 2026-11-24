@@ -66,6 +66,22 @@
         </svg>
       </div>
 
+      <!-- 画面左上：言葉選択ボタン＆メニュー（高齢者向け・大きく見やすいデザイン） -->
+      <div id="word-select-container" class="word-select-container">
+        <button id="song-select-btn" class="word-select-btn" aria-label="練習する言葉を選択" aria-haspopup="true" aria-expanded="false">
+          <svg class="word-select-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+          </svg>
+          <span id="song-select-current-label" class="word-select-label">あいうえお</span>
+        </button>
+        <div id="song-select-menu" class="word-select-menu hidden" role="menu">
+          <button class="song-menu-item active" data-song="aiueo_step" role="menuitem">あいうえお</button>
+          <button class="song-menu-item" data-song="arigatou_step" role="menuitem">ありがとう</button>
+          <button class="song-menu-item" data-song="konnichiwa_step" role="menuitem">こんにちは</button>
+          <button class="song-menu-item" data-song="konbanwa_step" role="menuitem">こんばんは</button>
+        </div>
+      </div>
+
       <!-- 画面右上コントロール群（トラッキングライン切替ボタン） -->
       <div class="top-right-controls">
         <!-- トラッキングライン表示切替ボタン（デフォルト表示・タップで切替可能） -->
@@ -79,11 +95,6 @@
             <line x1="3" y1="21" x2="21" y2="3" class="slash-line" />
           </svg>
         </button>
-      </div>
-
-      <!-- カウントダウンオーバーレイ（3・2・1・START!） -->
-      <div id="countdown-overlay" class="countdown-overlay hidden">
-        <div id="countdown-text" class="countdown-text">3</div>
       </div>
 
       <!-- iOS/WebKit用：オーディオセッションをPlayback（システム主音量）に昇格させる無音オーディオ -->
@@ -178,44 +189,6 @@
           </div>
         </div>
       </div>
-      <!-- 起動時：あいうえお リハビリセッションスタートモーダル -->
-      <div id="start-modal" class="start-modal">
-        <div class="start-card">
-          <div class="start-title">あいうえお リハビリセッション</div>
-          <div class="free-session-guide">
-            <p class="free-guide-desc">親指から順番に1本ずつ指をタップすると、「あ・い・う・え・お」が鳴り、上に言葉がつながります。</p>
-            <div class="finger-note-mapping">
-              <div class="finger-badge-item" style="--finger-color: #ff3366;">
-                <span class="finger-name">親指</span>
-                <span class="finger-note">あ</span>
-              </div>
-              <div class="finger-badge-item" style="--finger-color: #ff9900;">
-                <span class="finger-name">人差し指</span>
-                <span class="finger-note">い</span>
-              </div>
-              <div class="finger-badge-item" style="--finger-color: #00e5ff;">
-                <span class="finger-name">中指</span>
-                <span class="finger-note">う</span>
-              </div>
-              <div class="finger-badge-item" style="--finger-color: #39ff14;">
-                <span class="finger-name">薬指</span>
-                <span class="finger-note">え</span>
-              </div>
-              <div class="finger-badge-item" style="--finger-color: #bd00ff;">
-                <span class="finger-name">小指</span>
-                <span class="finger-note">お</span>
-              </div>
-            </div>
-          </div>
-          <button id="start-play-btn" class="start-play-btn">
-            <span id="start-play-text">スタート</span>
-          </button>
-          <div class="start-hint">
-            ※机の上などで指をタップ（打鍵）してみてください
-          </div>
-        </div>
-      </div>
-
 
       <!-- タップ起動フォールバック（Autoplay Policy対策・白黒ミニマル） -->
       <div id="camera-tap-prompt" class="camera-tap-prompt hidden">

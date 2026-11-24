@@ -244,14 +244,41 @@ export function playVoiceSound(
 function speakFallback(text) {
   if ("speechSynthesis" in window) {
     try {
+      window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = "ja-JP";
-      utter.rate = 1.25; // リハビリのテンポに合わせて歯切れ良く
-      utter.pitch = 1.1; // 高齢者に聞き取りやすいやや高めのピッチ
+      utter.rate = 1.05; // 高齢者に聞き取りやすい落ち着いた発声
+      utter.pitch = 1.05;
       window.speechSynthesis.speak(utter);
     } catch (err) {
       console.warn("[VOICE] SpeechSynthesisフォールバックエラー:", err);
     }
+  }
+}
+
+const VOWEL_NOTE_TO_VOICE = {
+  あ: "a",
+  い: "i",
+  う: "u",
+  え: "e",
+  お: "o",
+};
+
+/**
+ * ステップの文字に応じた発声（あいうえおは既存音声バッファ、その他は日本語SpeechSynthesis）
+ * @param {string} note 発音する文字
+ * @param {number} velocity 音量
+ */
+function playCharacterVoice(note, velocity = 1.0) {
+  const voiceKey = VOWEL_NOTE_TO_VOICE[note];
+  if (voiceKey) {
+    playVoiceSound(voiceKey, velocity, true);
+    return;
+  }
+  speakFallback(note || "あ");
+  tapCount++;
+  if (tapCountVal) {
+    tapCountVal.textContent = `${tapCount}`;
   }
 }
 
@@ -2581,13 +2608,55 @@ const AIUEO_STEP_SEQUENCE = [
   },
 ];
 
-// 演奏曲リスト（親指順ステップ演奏 ＆ フリーセッション）
+const ARIGATOU_STEP_SEQUENCE = [
+  { step: 1, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "あ", rightNote: "C5", freq: 523.25, beats: 1 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "り", rightNote: "D5", freq: 587.33, beats: 1 },
+  { step: 3, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "が", rightNote: "E5", freq: 659.26, beats: 1 },
+  { step: 4, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "と", rightNote: "F5", freq: 698.46, beats: 1 },
+  { step: 5, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "う", rightNote: "G5", freq: 783.99, beats: 1 },
+];
+
+const KONNICHIWA_STEP_SEQUENCE = [
+  { step: 1, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "こ", rightNote: "C5", freq: 523.25, beats: 1 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "ん", rightNote: "D5", freq: 587.33, beats: 1 },
+  { step: 3, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "に", rightNote: "E5", freq: 659.26, beats: 1 },
+  { step: 4, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ち", rightNote: "F5", freq: 698.46, beats: 1 },
+  { step: 5, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "は", rightNote: "G5", freq: 783.99, beats: 1 },
+];
+
+const KONBANWA_STEP_SEQUENCE = [
+  { step: 1, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "こ", rightNote: "C5", freq: 523.25, beats: 1 },
+  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "ん", rightNote: "D5", freq: 587.33, beats: 1 },
+  { step: 3, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ば", rightNote: "E5", freq: 659.26, beats: 1 },
+  { step: 4, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ん", rightNote: "F5", freq: 698.46, beats: 1 },
+  { step: 5, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "は", rightNote: "G5", freq: 783.99, beats: 1 },
+];
+
+// 演奏曲リスト（5文字言葉ステップ演奏 ＆ フリーセッション）
 export const SONGS = {
   aiueo_step: {
     id: "aiueo_step",
-    title: "あいうえお（親指順）",
+    title: "あいうえお",
     bpm: 100,
     sequence: AIUEO_STEP_SEQUENCE,
+  },
+  arigatou_step: {
+    id: "arigatou_step",
+    title: "ありがとう",
+    bpm: 100,
+    sequence: ARIGATOU_STEP_SEQUENCE,
+  },
+  konnichiwa_step: {
+    id: "konnichiwa_step",
+    title: "こんにちは",
+    bpm: 100,
+    sequence: KONNICHIWA_STEP_SEQUENCE,
+  },
+  konbanwa_step: {
+    id: "konbanwa_step",
+    title: "こんばんは",
+    bpm: 100,
+    sequence: KONBANWA_STEP_SEQUENCE,
   },
   free_session: {
     id: "free_session",
@@ -2758,53 +2827,18 @@ let countdownTimerId = null;
  * @param {Function} callback カウントダウン完了後のコールバック
  */
 export function startCountdown(callback) {
+  // カウントダウンを廃止し、即座に開始コールバックを実行
   if (countdownTimerId) {
     clearInterval(countdownTimerId);
     countdownTimerId = null;
   }
-  isCountingDown = true;
+  isCountingDown = false;
   tapState = "IDLE";
-  updateStateHud("COUNTDOWN", false);
-
   const overlay = document.getElementById("countdown-overlay");
-  const textEl = document.getElementById("countdown-text");
-  if (!overlay || !textEl) {
-    isCountingDown = false;
-    if (callback) callback();
-    return;
+  if (overlay) {
+    overlay.classList.add("hidden");
   }
-
-  overlay.classList.remove("hidden");
-  let count = 3;
-  textEl.textContent = `${count}`;
-  textEl.style.transform = "scale(1.2)";
-  setTimeout(() => {
-    if (textEl) textEl.style.transform = "scale(1.0)";
-  }, 60);
-
-  countdownTimerId = setInterval(() => {
-    count--;
-    if (count > 0) {
-      textEl.textContent = `${count}`;
-      textEl.style.transform = "scale(1.2)";
-      setTimeout(() => {
-        if (textEl) textEl.style.transform = "scale(1.0)";
-      }, 60);
-    } else if (count === 0) {
-      textEl.textContent = "START!";
-      textEl.style.transform = "scale(1.3)";
-      setTimeout(() => {
-        if (textEl) textEl.style.transform = "scale(1.0)";
-      }, 60);
-    } else {
-      clearInterval(countdownTimerId);
-      countdownTimerId = null;
-      overlay.classList.add("hidden");
-      isCountingDown = false;
-      updateStateHud("IDLE", false);
-      if (callback) callback();
-    }
-  }, 1000);
+  if (callback) callback();
 }
 
 // 完走クリア演出の状態管理（クリア演出中は打鍵認識を一時停止）
@@ -2893,9 +2927,17 @@ export function selectSong(songId, withCountdown = true) {
     if (check) check.textContent = isSelected ? "●" : "○";
   });
 
+  // 左上言葉選択ボタンの現在表示ラベル更新
+  const currentLabelEl = document.getElementById("song-select-current-label");
+  if (currentLabelEl) {
+    currentLabelEl.textContent = targetSong.title;
+  }
+
   // メニューを閉じる
   const menu = document.getElementById("song-select-menu");
   if (menu) menu.classList.add("hidden");
+  const selectBtn = document.getElementById("song-select-btn");
+  if (selectBtn) selectBtn.setAttribute("aria-expanded", "false");
 
   if (targetSong.isFreeSession) {
     renderSongGuideUI();
@@ -4187,44 +4229,22 @@ function prepareApp() {
   // 初期状態で親指順ステップセッションUIをセット
   selectSong("aiueo_step", false);
 
-  // 音声バナーは初期状態では隠す（スタートボタン押下で確実に有効化されるため）
+  // 音声バナーは初期状態では隠す
   if (audioStartBanner) {
     audioStartBanner.classList.add("hidden");
   }
 
-  // 起動モーダルのイベント初期化
-  setupStartModal();
+  // スタートモーダル・カウントダウンなしで自動起動
+  handleStartPlay();
 }
 
 /**
- * 起動時フリーセッションモーダルのイベント登録
- */
-function setupStartModal() {
-  if (!startModal) return;
-
-  if (startPlayBtn) {
-    startPlayBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await handleStartPlay();
-    });
-  }
-}
-
-/**
- * 「演奏を開始」ボタン押下時の実行処理（音声アンロック・カメラ起動・カウントダウン）
+ * 起動時自動開始処理（音声初期化・モデル待機・カメラ起動、制限時のみタップ起動を表示）
  */
 async function handleStartPlay() {
-  if (!startPlayBtn) return;
-
-  // ボタンをローディング状態にして二重タップを防止
-  startPlayBtn.disabled = true;
-  if (startPlayText) startPlayText.textContent = "カメラ・AI起動中...";
-
-  // 1. ユーザー操作（タップ）の同期スタック内で Web Audio API を即時有効化
   ensureAudioContext();
   loadVoiceBuffers();
 
-  // 音声バナーは不要なので非表示を確実に維持
   if (audioStartBanner) {
     audioStartBanner.classList.add("hidden");
   }
@@ -4237,29 +4257,16 @@ async function handleStartPlay() {
       await initHandLandmarker();
     }
 
-    // 選択された曲をセット（カウントダウンはカメラ起動後に行うため false）
     selectSong(selectedStartSongId, false);
 
-    // 2. インカメラの起動（ユーザー操作コンテキスト内での実行）
     updateStatus("インカメラ起動中...");
     await startFrontCamera();
 
-    // 3. 起動モーダルを非表示
-    if (startModal) {
-      startModal.classList.add("hidden");
-    }
-
-    // 4. カウントダウン（3・2・1・START!）を開始して演奏へ移行
     await requestWakeLock();
-    startCountdown(() => {
-      console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
-    });
+    updateStatus("トラッキング中");
   } catch (error) {
     console.error("起動エラー:", error);
-    startPlayBtn.disabled = false;
-    if (startPlayText) startPlayText.textContent = "スタート";
 
-    // 自動再生制限による起動保留の場合は、白黒ミニマルなタップ起動プロンプトを表示
     if (error.name === "AutoplayBlockedError") {
       updateStatus("タップ待機中");
       showCameraTapPrompt(async () => {
@@ -4270,12 +4277,6 @@ async function handleStartPlay() {
           isPredicting = true;
           schedulePredictLoop();
           await requestWakeLock();
-          if (startModal) startModal.classList.add("hidden");
-          startCountdown(() => {
-            console.log(
-              `[START] 演奏開始: ${SONGS[selectedStartSongId].title}`,
-            );
-          });
           updateStatus("トラッキング中");
         } catch (retryErr) {
           console.error("タップ後のカメラ起動エラー:", retryErr);
@@ -5274,8 +5275,10 @@ function drawRawHandLandmarks(results) {
       // 現在の音符を取得
       const currentTarget = currentSequence[currentSongStep];
 
-      // 右手メロディ音を発音（高齢者リハビリ向け「あ・い・う・え・お」音声）
-      if (currentTarget.fingerKey) {
+      // 右手メロディ音を発音（文字ごとに既存音声バッファまたは日本語SpeechSynthesis）
+      if (currentTarget.note) {
+        playCharacterVoice(currentTarget.note, MELODY_VELOCITY);
+      } else if (currentTarget.fingerKey) {
         playVoiceSound(currentTarget.fingerKey, MELODY_VELOCITY, true);
       } else {
         playTapSound(
@@ -5826,21 +5829,23 @@ const songSelectBtn = document.getElementById("song-select-btn");
 const songSelectMenu = document.getElementById("song-select-menu");
 
 if (songSelectBtn && songSelectMenu) {
-  // 丸ボタンタップでメニュー表示/非表示トグル
+  // ボタンタップでメニュー表示/非表示トグル
   songSelectBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     ensureAudioContext(); // ユーザー操作契機でオーディオ初期化
+    const willOpen = songSelectMenu.classList.contains("hidden");
     songSelectMenu.classList.toggle("hidden");
+    songSelectBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
   });
 
-  // メニュー項目タップで曲選択
+  // メニュー項目タップで言葉選択
   document.querySelectorAll(".song-menu-item").forEach((item) => {
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       ensureAudioContext();
       const songId = item.dataset.song;
       if (songId) {
-        selectSong(songId);
+        selectSong(songId, false);
       }
     });
   });
@@ -5852,6 +5857,7 @@ if (songSelectBtn && songSelectMenu) {
       !songSelectMenu.contains(e.target)
     ) {
       songSelectMenu.classList.add("hidden");
+      songSelectBtn.setAttribute("aria-expanded", "false");
     }
   });
 }
