@@ -1,6 +1,6 @@
 /**
  * MediaPipe Hand Landmarker 最小検証環境 (インカメラ・鏡像完全一致)
- * 
+ *
  * 机面スレスレの水平アングルから手を認識させる前提の最小実装。
  * 遅延検証のため、平滑化フィルター（移動平均や1 Euro Filter等）は一切挟まず、
  * 検出された生（Raw）のランドマーク座標をダイレクトにCanvasへ描画します。
@@ -117,7 +117,8 @@ window.addEventListener("resize", checkDebugPanelVisibility);
 
 // トラッキングライン（骨格線・指先マーカー）の表示フラグ（デフォルト表示・localStorageで状態保存）
 export const TRACKING_LINES_STORAGE_KEY = "piarno_show_tracking_lines";
-export let showTrackingLines = localStorage.getItem(TRACKING_LINES_STORAGE_KEY) !== "false";
+export let showTrackingLines =
+  localStorage.getItem(TRACKING_LINES_STORAGE_KEY) !== "false";
 
 // テスト用CSVデータセット群（ファイル別）
 export let testDataDatasets = [];
@@ -143,7 +144,7 @@ const VOICE_FILES = {
   i: `${audioBasePath}/audio/i.mp3`,
   u: `${audioBasePath}/audio/u.mp3`,
   e: `${audioBasePath}/audio/e.mp3`,
-  o: `${audioBasePath}/audio/o.mp3`
+  o: `${audioBasePath}/audio/o.mp3`,
 };
 
 export const FINGER_TO_VOICE = {
@@ -151,7 +152,7 @@ export const FINGER_TO_VOICE = {
   INDEX: "i",
   MIDDLE: "u",
   RING: "e",
-  PINKY: "o"
+  PINKY: "o",
 };
 
 export const VOICE_KANA = {
@@ -159,7 +160,7 @@ export const VOICE_KANA = {
   i: "い",
   u: "う",
   e: "え",
-  o: "お"
+  o: "お",
 };
 
 /**
@@ -178,11 +179,13 @@ export async function loadVoiceBuffers() {
         const arrayBuffer = await res.arrayBuffer();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
         voiceBuffers[key] = audioBuffer;
-        console.log(`[VOICE] 音声バッファロード完了: ${key} (${VOICE_KANA[key]})`);
+        console.log(
+          `[VOICE] 音声バッファロード完了: ${key} (${VOICE_KANA[key]})`,
+        );
       } catch (err) {
         console.warn(`[VOICE] 音声ロード失敗 (${key}):`, err);
       }
-    })
+    }),
   );
   isVoiceLoaded = Object.keys(voiceBuffers).length > 0;
 }
@@ -193,25 +196,48 @@ export async function loadVoiceBuffers() {
  * @param {number} velocity 音量（0.0〜1.0）
  * @param {boolean} countAsTap タップ回数としてカウントするか
  */
-export function playVoiceSound(voiceKeyOrFinger, velocity = 1.0, countAsTap = true) {
+export function playVoiceSound(
+  voiceKeyOrFinger,
+  velocity = 1.0,
+  countAsTap = true,
+) {
   const ctx = ensureAudioContext();
   const voiceKey = FINGER_TO_VOICE[voiceKeyOrFinger] || voiceKeyOrFinger;
   const kana = VOICE_KANA[voiceKey] || "あ";
 
-  // 1. Web Audio API バッファによる即時再生（低遅延・同時打鍵対応）
+  // 1. Web Audio API バッファによる即時再生（低遅延・同時打鍵対応＋温かみフィルター）
   if (ctx && voiceBuffers[voiceKey]) {
     try {
       const source = ctx.createBufferSource();
       source.buffer = voiceBuffers[voiceKey];
+
+      // 人の声の温もり帯域（300Hz付近）をわずかに補い、高域の硬さを丸めるフィルター
+      const warmthFilter = ctx.createBiquadFilter();
+      warmthFilter.type = "peaking";
+      warmthFilter.frequency.setValueAtTime(320, ctx.currentTime);
+      warmthFilter.Q.setValueAtTime(0.9, ctx.currentTime);
+      warmthFilter.gain.setValueAtTime(2.0, ctx.currentTime);
+
+      const softHighFilter = ctx.createBiquadFilter();
+      softHighFilter.type = "lowpass";
+      softHighFilter.frequency.setValueAtTime(5200, ctx.currentTime);
+      softHighFilter.Q.setValueAtTime(0.7, ctx.currentTime);
+
       const gainNode = ctx.createGain();
-      // 高齢者にも聞き取りやすいよう、明瞭な音圧に調整
+      // 高齢者にも聞き取りやすいよう、明瞭かつ優しい音圧に調整
       const vol = Math.min(1.2, Math.max(0.3, velocity * 1.15));
       gainNode.gain.setValueAtTime(vol, ctx.currentTime);
-      source.connect(gainNode);
+
+      source.connect(warmthFilter);
+      warmthFilter.connect(softHighFilter);
+      softHighFilter.connect(gainNode);
       gainNode.connect(ctx.destination);
       source.start(0);
     } catch (e) {
-      console.warn("[VOICE] AudioBuffer再生エラー、Web Speech APIへフォールバック:", e);
+      console.warn(
+        "[VOICE] AudioBuffer再生エラー、Web Speech APIへフォールバック:",
+        e,
+      );
       speakFallback(kana);
     }
   } else {
@@ -252,32 +278,36 @@ const FREQ_TO_NOTE_MAP = {
   146.83: "D3",
   164.81: "E3",
   174.61: "F3",
-  196.00: "G3",
+  196.0: "G3",
   // 右手メロディ中央域（C4〜G4）
   261.63: "C4",
   293.66: "D4",
   329.63: "E4",
   349.23: "F4",
-  392.00: "G4",
+  392.0: "G4",
   // （互換用高音域 C5〜G5）
   523.25: "C5",
   587.33: "D5",
   659.25: "E5",
   698.46: "F5",
-  783.99: "G5"
+  783.99: "G5",
 };
 
 // ノート名から周波数（Hz）への逆引きマッピング（フォールバック合成時にも使用）
-const NOTE_TO_FREQ_MAP = Object.entries(FREQ_TO_NOTE_MAP).reduce((acc, [f, n]) => {
-  acc[n] = parseFloat(f);
-  return acc;
-}, {});
+const NOTE_TO_FREQ_MAP = Object.entries(FREQ_TO_NOTE_MAP).reduce(
+  (acc, [f, n]) => {
+    acc[n] = parseFloat(f);
+    return acc;
+  },
+  {},
+);
 
 // 任意の音名（"F#4", "B2" 等）を平均律の周波数へ変換（伴奏和音のフォールバック合成用）
 function noteNameToFreq(noteName) {
   const m = /^([A-G])(#?)(\d)$/.exec(noteName);
   if (!m) return null;
-  const semis = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0);
+  const semis =
+    { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0);
   const midi = semis + 12 * (parseInt(m[3], 10) + 1);
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
@@ -318,20 +348,27 @@ function initPianoSampler() {
         "D#7": "Ds7.mp3",
         "F#7": "Fs7.mp3",
         A7: "A7.mp3",
-        C8: "C8.mp3"
+        C8: "C8.mp3",
       },
       // 鍵盤（ダンパー）が戻ったときの消音フェード。ペダル踏み替え時に前の和音がふわっと消える長さ
       release: 1.6,
       baseUrl: "https://tonejs.github.io/audio/salamander/",
       onload: () => {
         isSamplerLoaded = true;
-        console.log("[AUDIO] Salamander Grand Piano サンプル音源のロードが完了しました");
-      }
+        console.log(
+          "[AUDIO] Salamander Grand Piano サンプル音源のロードが完了しました",
+        );
+      },
     });
 
     // 余韻づくり：ピアノ → ホール残響（Reverb） → 音割れ防止＆音圧調整（Compressor/Limiter） → 出力
     const reverb = new Tone.Reverb({ decay: 2.8, preDelay: 0.012, wet: 0.24 });
-    const compressor = new Tone.Compressor({ threshold: -18, ratio: 2.5, attack: 0.01, release: 0.25 });
+    const compressor = new Tone.Compressor({
+      threshold: -18,
+      ratio: 2.5,
+      attack: 0.01,
+      release: 0.25,
+    });
     const limiter = new Tone.Limiter(-1);
     pianoSampler.chain(reverb, compressor, limiter, Tone.getDestination());
   } catch (err) {
@@ -345,7 +382,7 @@ initPianoSampler();
 loadVoiceBuffers().catch(() => {});
 
 // 学習済みCSVから自動導出される閾値モデル（デフォルト値付き）
-let hitRyThreshold = 0.70;
+let hitRyThreshold = 0.7;
 let liftRyThreshold = 0.45;
 let trainedHitSamples = 0;
 
@@ -360,7 +397,10 @@ let wakeLockSentinel = null;
  * iPad等の演奏中に画面が自動消灯しないよう画面ロックを保持
  */
 export async function requestWakeLock() {
-  if ("wakeLock" in navigator && typeof navigator.wakeLock.request === "function") {
+  if (
+    "wakeLock" in navigator &&
+    typeof navigator.wakeLock.request === "function"
+  ) {
     try {
       if (wakeLockSentinel && !wakeLockSentinel.released) {
         return;
@@ -372,7 +412,10 @@ export async function requestWakeLock() {
       });
       console.log("[WAKE LOCK] 画面スリープ防止を有効化しました");
     } catch (err) {
-      console.warn("[WAKE LOCK] 画面スリープ防止の取得スキップ（非対応または低電力モード等）:", err);
+      console.warn(
+        "[WAKE LOCK] 画面スリープ防止の取得スキップ（非対応または低電力モード等）:",
+        err,
+      );
     }
   }
 }
@@ -402,7 +445,10 @@ export function ensureAudioContext() {
   }
 
   const rawCtx = Tone.getContext().rawContext;
-  if (rawCtx && (rawCtx.state === "suspended" || rawCtx.state === "interrupted")) {
+  if (
+    rawCtx &&
+    (rawCtx.state === "suspended" || rawCtx.state === "interrupted")
+  ) {
     rawCtx.resume().catch((err) => {
       console.warn("[AUDIO] AudioContext resume failed:", err);
     });
@@ -440,7 +486,7 @@ function playSynthFallback(freq = 523.25, velocity = 1) {
     const gainBase = ctx.createGain();
     oscBase.type = "triangle";
     oscBase.frequency.setValueAtTime(freq, now);
-    gainBase.gain.setValueAtTime(0.40, now);
+    gainBase.gain.setValueAtTime(0.4, now);
     oscBase.connect(gainBase);
     gainBase.connect(masterGain);
 
@@ -448,7 +494,7 @@ function playSynthFallback(freq = 523.25, velocity = 1) {
     const gainHarmonic = ctx.createGain();
     oscHarmonic.type = "sine";
     oscHarmonic.frequency.setValueAtTime(freq * 2, now);
-    gainHarmonic.gain.setValueAtTime(0.20, now);
+    gainHarmonic.gain.setValueAtTime(0.2, now);
     oscHarmonic.connect(gainHarmonic);
     gainHarmonic.connect(masterGain);
 
@@ -469,8 +515,8 @@ function playSynthFallback(freq = 523.25, velocity = 1) {
 }
 
 // 発音中の音の管理（実際のピアノの「鍵盤を押さえている間」と「ダンパーペダル」を再現）
-let heldMelodyNote = null;          // 鳴らし続けているメロディ音（次のメロディ打鍵で離鍵＝レガート）
-const pedalNotes = new Set();       // ペダルで伸ばしている伴奏音（ペダル踏み替えでまとめて消音）
+let heldMelodyNote = null; // 鳴らし続けているメロディ音（次のメロディ打鍵で離鍵＝レガート）
+const pedalNotes = new Set(); // ペダルで伸ばしている伴奏音（ペダル踏み替えでまとめて消音）
 
 /**
  * ペダルの踏み替え：伸ばしていた伴奏音を自然なフェードで消音する
@@ -511,7 +557,12 @@ export function releaseAllNotes() {
  *   - melody : 次のメロディ打鍵まで鳴らし続け、自然に減衰（レガート）
  *   - pedal  : 次のペダル踏み替えまで伸ばす（伴奏の和音・低音）
  */
-export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true, velocity = 1, mode = "oneshot") {
+export function playTapSound(
+  targetFreqOrNote = 523.25,
+  countAsTap = true,
+  velocity = 1,
+  mode = "oneshot",
+) {
   // 配列が渡された場合は各音を再帰的に発音
   if (Array.isArray(targetFreqOrNote)) {
     targetFreqOrNote.forEach((note) => {
@@ -527,7 +578,12 @@ export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true, veloc
   // オブジェクトオプションで渡された場合の互換吸収
   if (typeof velocity === "object" && velocity !== null) {
     const opts = velocity;
-    velocity = typeof opts.velocity === "number" ? opts.velocity : (opts.isBass ? 0.55 : 0.85);
+    velocity =
+      typeof opts.velocity === "number"
+        ? opts.velocity
+        : opts.isBass
+          ? 0.55
+          : 0.85;
     mode = opts.isBass ? "pedal" : "melody";
   }
 
@@ -548,7 +604,10 @@ export function playTapSound(targetFreqOrNote = 523.25, countAsTap = true, veloc
   if (isSamplerLoaded && pianoSampler) {
     try {
       // 人間の演奏らしさ：強さをわずかに揺らし、和音の各音もほんの数ミリ秒ずらす
-      const humanVelocity = Math.min(1, Math.max(0.05, velocity * (0.94 + Math.random() * 0.1)));
+      const humanVelocity = Math.min(
+        1,
+        Math.max(0.05, velocity * (0.94 + Math.random() * 0.1)),
+      );
       const time = Tone.now() + (mode === "pedal" ? Math.random() * 0.008 : 0);
 
       // 該当音のピアノ鍵盤が存在すればフラッシュ演出
@@ -599,7 +658,7 @@ let frameCount = 0;
 // 人差し指先端（TIP）の最新生ピクセル座標
 export const currentTip = {
   x: 0,
-  y: 0
+  y: 0,
 };
 
 /**
@@ -686,7 +745,7 @@ class PointFilter {
     }
     return {
       x,
-      y
+      y,
     };
   }
 
@@ -700,7 +759,7 @@ class PointFilter {
     }
     return {
       x: fx,
-      y: fy
+      y: fy,
     };
   }
 
@@ -720,7 +779,7 @@ export const FINGER_NAMES = {
   INDEX: "人差し指",
   MIDDLE: "中指",
   RING: "薬指",
-  PINKY: "小指"
+  PINKY: "小指",
 };
 
 // 対象指の定義（高齢者リハビリ向け：右手 親指〜小指までの全指・あ〜お）
@@ -735,18 +794,18 @@ export const FINGER_CONFIGS = {
     note: "あ",
     voiceKey: "a",
     freq: 523.25, // C5
-    baseIdx: 2,   // MCP (付け根)
-    p1Idx: 1,     // CMC
-    p2Idx: 2,     // MCP
-    p3Idx: 3,     // IP
-    tipIdx: 4,    // TIP
+    baseIdx: 2, // MCP (付け根)
+    p1Idx: 1, // CMC
+    p2Idx: 2, // MCP
+    p3Idx: 3, // IP
+    tipIdx: 4, // TIP
     indices: [1, 2, 3, 4],
     color: {
       name: "coral",
       stroke: "rgba(255, 82, 82, 0.95)",
       halo: "rgba(255, 82, 82, 0.30)",
-      fill: "#ff5252"
-    }
+      fill: "#ff5252",
+    },
   },
   INDEX: {
     fingerNum: 2,
@@ -758,18 +817,18 @@ export const FINGER_CONFIGS = {
     note: "い",
     voiceKey: "i",
     freq: 587.33, // D5
-    baseIdx: 5,   // MCP
-    p1Idx: 5,     // MCP
-    p2Idx: 6,     // PIP
-    p3Idx: 7,     // DIP
-    tipIdx: 8,    // TIP
+    baseIdx: 5, // MCP
+    p1Idx: 5, // MCP
+    p2Idx: 6, // PIP
+    p3Idx: 7, // DIP
+    tipIdx: 8, // TIP
     indices: [5, 6, 7, 8],
     color: {
       name: "cyan",
       stroke: "rgba(0, 229, 255, 0.95)",
       halo: "rgba(0, 229, 255, 0.30)",
-      fill: "#00e5ff"
-    }
+      fill: "#00e5ff",
+    },
   },
   MIDDLE: {
     fingerNum: 3,
@@ -781,18 +840,18 @@ export const FINGER_CONFIGS = {
     note: "う",
     voiceKey: "u",
     freq: 659.25, // E5
-    baseIdx: 9,   // MCP
-    p1Idx: 9,     // MCP
-    p2Idx: 10,    // PIP
-    p3Idx: 11,    // DIP
-    tipIdx: 12,   // TIP
+    baseIdx: 9, // MCP
+    p1Idx: 9, // MCP
+    p2Idx: 10, // PIP
+    p3Idx: 11, // DIP
+    tipIdx: 12, // TIP
     indices: [9, 10, 11, 12],
     color: {
       name: "green",
       stroke: "rgba(0, 230, 118, 0.95)",
       halo: "rgba(0, 230, 118, 0.30)",
-      fill: "#00e676"
-    }
+      fill: "#00e676",
+    },
   },
   RING: {
     fingerNum: 4,
@@ -804,18 +863,18 @@ export const FINGER_CONFIGS = {
     note: "え",
     voiceKey: "e",
     freq: 698.46, // F5
-    baseIdx: 13,  // MCP
-    p1Idx: 13,    // MCP
-    p2Idx: 14,    // PIP
-    p3Idx: 15,    // DIP
-    tipIdx: 16,   // TIP
+    baseIdx: 13, // MCP
+    p1Idx: 13, // MCP
+    p2Idx: 14, // PIP
+    p3Idx: 15, // DIP
+    tipIdx: 16, // TIP
     indices: [13, 14, 15, 16],
     color: {
       name: "yellow",
       stroke: "rgba(255, 214, 0, 0.95)",
       halo: "rgba(255, 214, 0, 0.30)",
-      fill: "#ffd600"
-    }
+      fill: "#ffd600",
+    },
   },
   PINKY: {
     fingerNum: 5,
@@ -827,19 +886,19 @@ export const FINGER_CONFIGS = {
     note: "お",
     voiceKey: "o",
     freq: 783.99, // G5
-    baseIdx: 17,  // MCP
-    p1Idx: 17,    // MCP
-    p2Idx: 18,    // PIP
-    p3Idx: 19,    // DIP
-    tipIdx: 20,   // TIP
+    baseIdx: 17, // MCP
+    p1Idx: 17, // MCP
+    p2Idx: 18, // PIP
+    p3Idx: 19, // DIP
+    tipIdx: 20, // TIP
     indices: [17, 18, 19, 20],
     color: {
       name: "magenta",
       stroke: "rgba(224, 64, 251, 0.95)",
       halo: "rgba(224, 64, 251, 0.30)",
-      fill: "#e040fb"
-    }
-  }
+      fill: "#e040fb",
+    },
+  },
 };
 
 // 『よろこびのうた（Ode to Joy）』運指・音名シーケンス定義（右手5音固定 C5〜G5・全16小節/62音）
@@ -854,95 +913,780 @@ export const ODE_TO_JOY_SEQUENCE = [
   // 第1節（フレーズ1）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ ミ レ レ ─
   // ==========================================
   // 小節1: ミ ミ ファ ソ - 伴奏コード: C
-  { step: 1,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["C3", "C4", "C5"], autoOffbeat: [] },
-  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["C5"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }] },
-  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["E3", "C4", "D5"], autoOffbeat: [] },
-  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G3", "E5"], autoOffbeat: [] },
+  {
+    step: 1,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["C3", "C4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 2,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["C5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }],
+  },
+  {
+    step: 3,
+    phrase: 1,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["E3", "C4", "D5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 4,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G3", "E5"],
+    autoOffbeat: [],
+  },
   // 小節2: ソ ファ ミ レ - 伴奏コード: G
-  { step: 5,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G2", "G3", "E5"], autoOffbeat: [] },
-  { step: 6,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["D5"], autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }] },
-  { step: 7,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["B2", "G3", "C5"], autoOffbeat: [] },
-  { step: 8,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["D3", "G4"], autoOffbeat: [] },
+  {
+    step: 5,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G2", "G3", "E5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 6,
+    phrase: 1,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["D5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }],
+  },
+  {
+    step: 7,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["B2", "G3", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 8,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["D3", "G4"],
+    autoOffbeat: [],
+  },
   // 小節3: ド ド レ ミ - 伴奏コード: C
-  { step: 9,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C3", "G3", "E4", "G4"], autoOffbeat: [] },
-  { step: 10, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["E4"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }] },
-  { step: 11, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["E3", "G3", "G4"], autoOffbeat: [] },
-  { step: 12, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["G2", "E4", "G4", "C5"], autoOffbeat: [] },
+  {
+    step: 9,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C3", "G3", "E4", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 10,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["E4"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }],
+  },
+  {
+    step: 11,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["E3", "G3", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 12,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["G2", "E4", "G4", "C5"],
+    autoOffbeat: [],
+  },
   // 小節4: ミ レ レ ─ - 伴奏コード: C→G
-  { step: 13, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1.5, autoChord: ["C3", "G4", "C5"], autoOffbeat: [{ beat: 0.5, notes: ["C4"] }, { beat: 1, notes: ["G3"] }] },
-  { step: 14, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 0.5, autoChord: ["E3", "B4"], autoOffbeat: [] },
-  { step: 15, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 2, autoChord: ["B2", "D4", "G4", "B4"], autoOffbeat: [{ beat: 1, notes: ["G3"] }] },
+  {
+    step: 13,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1.5,
+    autoChord: ["C3", "G4", "C5"],
+    autoOffbeat: [
+      { beat: 0.5, notes: ["C4"] },
+      { beat: 1, notes: ["G3"] },
+    ],
+  },
+  {
+    step: 14,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 0.5,
+    autoChord: ["E3", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 15,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 2,
+    autoChord: ["B2", "D4", "G4", "B4"],
+    autoOffbeat: [{ beat: 1, notes: ["G3"] }],
+  },
 
   // ==========================================
   // 第2節（フレーズ2）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ レ ド ド ─
   // ==========================================
   // 小節5: ミ ミ ファ ソ - 伴奏コード: C
-  { step: 16, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["C3", "C4", "C5"], autoOffbeat: [] },
-  { step: 17, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["C5"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }] },
-  { step: 18, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["E3", "C4", "D5"], autoOffbeat: [] },
-  { step: 19, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G3", "E5"], autoOffbeat: [] },
+  {
+    step: 16,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["C3", "C4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 17,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["C5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }],
+  },
+  {
+    step: 18,
+    phrase: 2,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["E3", "C4", "D5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 19,
+    phrase: 2,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G3", "E5"],
+    autoOffbeat: [],
+  },
   // 小節6: ソ ファ ミ レ - 伴奏コード: G
-  { step: 20, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G2", "G3", "E5"], autoOffbeat: [] },
-  { step: 21, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["D5"], autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }] },
-  { step: 22, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["B2", "G3", "C5"], autoOffbeat: [] },
-  { step: 23, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["D3", "G4"], autoOffbeat: [] },
+  {
+    step: 20,
+    phrase: 2,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G2", "G3", "E5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 21,
+    phrase: 2,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["D5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }],
+  },
+  {
+    step: 22,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["B2", "G3", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 23,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["D3", "G4"],
+    autoOffbeat: [],
+  },
   // 小節7: ド ド レ ミ - 伴奏コード: C
-  { step: 24, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C3", "G3", "E4", "G4"], autoOffbeat: [] },
-  { step: 25, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["E4"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }] },
-  { step: 26, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["E3", "G3", "G4"], autoOffbeat: [] },
-  { step: 27, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["G2", "E4", "G4", "C5"], autoOffbeat: [] },
+  {
+    step: 24,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C3", "G3", "E4", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 25,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["E4"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }],
+  },
+  {
+    step: 26,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["E3", "G3", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 27,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["G2", "E4", "G4", "C5"],
+    autoOffbeat: [],
+  },
   // 小節8: レ ド ド ─ - 伴奏コード: G→C
-  { step: 28, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1.5, autoChord: ["B2", "D3", "G3", "D4", "G4", "B4"], autoOffbeat: [] },
-  { step: 29, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 0.5, autoChord: ["E4"], autoOffbeat: [] },
-  { step: 30, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 2, autoChord: ["G3", "E4", "G4"], autoOffbeat: [{ beat: 1, notes: ["C3"] }] },
+  {
+    step: 28,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1.5,
+    autoChord: ["B2", "D3", "G3", "D4", "G4", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 29,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 0.5,
+    autoChord: ["E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 30,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 2,
+    autoChord: ["G3", "E4", "G4"],
+    autoOffbeat: [{ beat: 1, notes: ["C3"] }],
+  },
 
   // ==========================================
   // 第3節（フレーズ3）: レ レ ミ ド ｜ レ ミ(短) ファ(短) ミ ド ｜ レ ミ(短) ファ(短) ミ レ ｜ ド レ ソ ─
   // ==========================================
   // 小節9: レ レ ミ ド - 伴奏コード: G→C
-  { step: 31, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["G2", "G3", "B4"], autoOffbeat: [] },
-  { step: 32, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["B4"], autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }] },
-  { step: 33, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["G2", "G3", "C5"], autoOffbeat: [] },
-  { step: 34, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C3", "E3", "E4"], autoOffbeat: [] },
+  {
+    step: 31,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["G2", "G3", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 32,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["B4"],
+    autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }],
+  },
+  {
+    step: 33,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["G2", "G3", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 34,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C3", "E3", "E4"],
+    autoOffbeat: [],
+  },
   // 小節10: レ ミ(短) ファ(短) ミ ド - 伴奏コード: G→C
-  { step: 35, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["G2", "G3", "B4"], autoOffbeat: [] },
-  { step: 36, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 0.5, autoChord: ["C5"], autoOffbeat: [] },
-  { step: 37, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 0.5, autoChord: ["G2", "G3", "D5"], autoOffbeat: [] },
-  { step: 38, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["G2", "G3", "C5"], autoOffbeat: [] },
-  { step: 39, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C3", "E3", "E4"], autoOffbeat: [] },
+  {
+    step: 35,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["G2", "G3", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 36,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 0.5,
+    autoChord: ["C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 37,
+    phrase: 3,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 0.5,
+    autoChord: ["G2", "G3", "D5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 38,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["G2", "G3", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 39,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C3", "E3", "E4"],
+    autoOffbeat: [],
+  },
   // 小節11: レ ミ(短) ファ(短) ミ レ - 伴奏コード: G→Am→E
-  { step: 40, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["G2", "G3", "B4"], autoOffbeat: [] },
-  { step: 41, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 0.5, autoChord: ["C5"], autoOffbeat: [] },
-  { step: 42, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 0.5, autoChord: ["G2", "G3", "D5"], autoOffbeat: [] },
-  { step: 43, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["A2", "A3", "B4"], autoOffbeat: [] },
-  { step: 44, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["E3", "B4"], autoOffbeat: [] },
+  {
+    step: 40,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["G2", "G3", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 41,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 0.5,
+    autoChord: ["C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 42,
+    phrase: 3,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 0.5,
+    autoChord: ["G2", "G3", "D5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 43,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["A2", "A3", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 44,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["E3", "B4"],
+    autoOffbeat: [],
+  },
   // 小節12: ド レ ソ(低) ＋4拍目に次のミ(step 48)を先取りしタイで小節13へ - 伴奏コード: Am→D→G
-  { step: 45, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["A2", "C3", "A4"], autoOffbeat: [] },
-  { step: 46, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["D3", "G3", "F#4"], autoOffbeat: [] },
-  { step: 47, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G4", freq: 392.00, beats: 1, autoChord: ["G2", "G3", "B3"], autoOffbeat: [] },
+  {
+    step: 45,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["A2", "C3", "A4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 46,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["D3", "G3", "F#4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 47,
+    phrase: 3,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G4",
+    freq: 392.0,
+    beats: 1,
+    autoChord: ["G2", "G3", "B3"],
+    autoOffbeat: [],
+  },
 
   // ==========================================
   // 第4節（フレーズ4）: ミ ミ ファ ソ ｜ ソ ファ ミ レ ｜ ド ド レ ミ ｜ レ ド ド ─
   // ==========================================
   // 小節13: (⌒ミ) ミ ファ ソ - 伴奏コード: G→C（step 48 は小節12の4拍目に打鍵、1拍後に C3+C4）
-  { step: 48, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 2, autoChord: ["G2", "E3", "C5"], autoOffbeat: [{ beat: 1, notes: ["C3", "C4"] }] },
-  { step: 49, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["C5"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }] },
-  { step: 50, phrase: 4, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["E3", "C4", "D5"], autoOffbeat: [] },
-  { step: 51, phrase: 4, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G3", "E5"], autoOffbeat: [] },
+  {
+    step: 48,
+    phrase: 4,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 2,
+    autoChord: ["G2", "E3", "C5"],
+    autoOffbeat: [{ beat: 1, notes: ["C3", "C4"] }],
+  },
+  {
+    step: 49,
+    phrase: 4,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["C5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "C4"] }],
+  },
+  {
+    step: 50,
+    phrase: 4,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["E3", "C4", "D5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 51,
+    phrase: 4,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G3", "E5"],
+    autoOffbeat: [],
+  },
   // 小節14: ソ ファ ミ レ - 伴奏コード: G
-  { step: 52, phrase: 4, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",   rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["G2", "G3", "E5"], autoOffbeat: [] },
-  { step: 53, phrase: 4, fingerNum: 4, fingerKey: "RING",   note: "ファ",  rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["D5"], autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }] },
-  { step: 54, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["B2", "G3", "C5"], autoOffbeat: [] },
-  { step: 55, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["D3", "G4"], autoOffbeat: [] },
+  {
+    step: 52,
+    phrase: 4,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["G2", "G3", "E5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 53,
+    phrase: 4,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["D5"],
+    autoOffbeat: [{ beat: 0.5, notes: ["G2", "G3"] }],
+  },
+  {
+    step: 54,
+    phrase: 4,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["B2", "G3", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 55,
+    phrase: 4,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["D3", "G4"],
+    autoOffbeat: [],
+  },
   // 小節15: ド ド レ ミ - 伴奏コード: C
-  { step: 56, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C3", "G3", "E4", "G4"], autoOffbeat: [] },
-  { step: 57, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["E4"], autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }] },
-  { step: 58, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["E3", "G3", "G4"], autoOffbeat: [] },
-  { step: 59, phrase: 4, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",   rightNote: "E5", freq: 659.25, beats: 1, autoChord: ["G2", "E4", "G4", "C5"], autoOffbeat: [] },
+  {
+    step: 56,
+    phrase: 4,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C3", "G3", "E4", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 57,
+    phrase: 4,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["E4"],
+    autoOffbeat: [{ beat: 0.5, notes: ["C3", "G3"] }],
+  },
+  {
+    step: 58,
+    phrase: 4,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["E3", "G3", "G4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 59,
+    phrase: 4,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    beats: 1,
+    autoChord: ["G2", "E4", "G4", "C5"],
+    autoOffbeat: [],
+  },
   // 小節16: レ ド ド ─ - 伴奏コード: G→C
-  { step: 60, phrase: 4, fingerNum: 2, fingerKey: "INDEX",  note: "レ",   rightNote: "D5", freq: 587.33, beats: 1.5, autoChord: ["B2", "D3", "G3", "D4", "G4", "B4"], autoOffbeat: [] },
-  { step: 61, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 0.5, autoChord: ["E4"], autoOffbeat: [] },
-  { step: 62, phrase: 4, fingerNum: 1, fingerKey: "THUMB",  note: "ド",   rightNote: "C5", freq: 523.25, beats: 2, autoChord: ["C3", "E3", "G3", "E4", "G4"], autoOffbeat: [] }
+  {
+    step: 60,
+    phrase: 4,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1.5,
+    autoChord: ["B2", "D3", "G3", "D4", "G4", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 61,
+    phrase: 4,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 0.5,
+    autoChord: ["E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 62,
+    phrase: 4,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 2,
+    autoChord: ["C3", "E3", "G3", "E4", "G4"],
+    autoOffbeat: [],
+  },
 ];
 
 // 『メリーさんのひつじ（Mary Had a Little Lamb）』運指・音名シーケンス定義（右手4音 C5, D5, E5, G5・自動伴奏 C3, G3・全8小節/26音）
@@ -953,43 +1697,277 @@ export const MARY_HAD_A_LITTLE_LAMB_SEQUENCE = [
   // 前半（フレーズ1）: ミ レ ド レ ｜ ミ ミ ミ ─ ｜ レ レ レ ─ ｜ ミ ソ ソ ─
   // ==========================================
   // 小節1: ミ レ ド レ - 自動伴奏: C3
-  { step: 1,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
-  { step: 2,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 3,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
-  { step: 4,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  {
+    step: 1,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: "C3",
+  },
+  {
+    step: 2,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
+  {
+    step: 3,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 4,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
   // 小節2: ミ ミ ミ ─ - 自動伴奏: C3
-  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
-  { step: 6,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 7,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  {
+    step: 5,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: "C3",
+  },
+  {
+    step: 6,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 7,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
   // 小節3: レ レ レ ─ - 自動伴奏: G3
-  { step: 8,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "G3" },
-  { step: 9,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 10, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  {
+    step: 8,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: "G3",
+  },
+  {
+    step: 9,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
+  {
+    step: 10,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
   // 小節4: ミ ソ ソ ─ - 自動伴奏: C3
-  { step: 11, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
-  { step: 12, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
-  { step: 13, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ", rightNote: "G5", freq: 783.99, autoLeftNote: null },
+  {
+    step: 11,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: "C3",
+  },
+  {
+    step: 12,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    autoLeftNote: null,
+  },
+  {
+    step: 13,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    autoLeftNote: null,
+  },
 
   // ==========================================
   // 後半（フレーズ2）: ミ レ ド レ ｜ ミ ミ ミ ミ ｜ レ レ ミ レ ｜ ド ─ ─ ─
   // ==========================================
   // 小節5: ミ レ ド レ - 自動伴奏: C3
-  { step: 14, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
-  { step: 15, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 16, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: null },
-  { step: 17, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  {
+    step: 14,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: "C3",
+  },
+  {
+    step: 15,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
+  {
+    step: 16,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 17,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
   // 小節6: ミ ミ ミ ミ - 自動伴奏: C3
-  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: "C3" },
-  { step: 19, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 20, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 21, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
+  {
+    step: 18,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: "C3",
+  },
+  {
+    step: 19,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 20,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 21,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
   // 小節7: レ レ ミ レ - 自動伴奏: G3
-  { step: 22, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: "G3" },
-  { step: 23, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
-  { step: 24, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ", rightNote: "E5", freq: 659.25, autoLeftNote: null },
-  { step: 25, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ", rightNote: "D5", freq: 587.33, autoLeftNote: null },
+  {
+    step: 22,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: "G3",
+  },
+  {
+    step: 23,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
+  {
+    step: 24,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.25,
+    autoLeftNote: null,
+  },
+  {
+    step: 25,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    autoLeftNote: null,
+  },
   // 小節8: ド ─ ─ ─ - 自動伴奏: C3
-  { step: 26, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド", rightNote: "C5", freq: 523.25, autoLeftNote: "C3" }
+  {
+    step: 26,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    autoLeftNote: "C3",
+  },
 ];
 
 // 『聖者の行進（When the Saints Go Marching In）』運指・音名シーケンス定義（全21小節/42音）
@@ -1001,77 +1979,622 @@ export const MARY_HAD_A_LITTLE_LAMB_SEQUENCE = [
 // 5本指の範囲外の音: 小節11の「ラ(低)」(A4)は親指、最後の「ド(高)」(C6)は小指で弾きます
 export const SAINTS_SEQUENCE = [
   // 小節1: ミ ミ ファ - 伴奏コード: なし（イントロ・右手和音のみ）
-  { step: 1,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["A4", "C5"], autoOffbeat: [] },
-  { step: 2,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["A4", "C5"], autoOffbeat: [] },
-  { step: 3,  phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["F4", "C5"], autoOffbeat: [] },
+  {
+    step: 1,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["A4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 2,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["A4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 3,
+    phrase: 1,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["F4", "C5"],
+    autoOffbeat: [],
+  },
   // 小節2: ソ ミ - 伴奏コード: C→C7
-  { step: 4,  phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 2, autoChord: ["C2", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["C3", "G3"] }] },
-  { step: 5,  phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 2, autoChord: ["A#1", "G4", "A#4"], autoOffbeat: [{ beat: 1, notes: ["A#2", "E3"] }] },
+  {
+    step: 4,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 2,
+    autoChord: ["C2", "G4", "C5"],
+    autoOffbeat: [{ beat: 1, notes: ["C3", "G3"] }],
+  },
+  {
+    step: 5,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 2,
+    autoChord: ["A#1", "G4", "A#4"],
+    autoOffbeat: [{ beat: 1, notes: ["A#2", "E3"] }],
+  },
   // 小節3: ド レ - 伴奏コード: Am→G7(♭9)
-  { step: 6,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 2, autoChord: ["A1", "E4", "A4"], autoOffbeat: [{ beat: 1, notes: ["A2", "C3"] }] },
-  { step: 7,  phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "レ",     rightNote: "D5", freq: 587.33, beats: 2, autoChord: ["G1", "F4", "G#4"], autoOffbeat: [{ beat: 1, notes: ["G2", "D3"] }] },
+  {
+    step: 6,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 2,
+    autoChord: ["A1", "E4", "A4"],
+    autoOffbeat: [{ beat: 1, notes: ["A2", "C3"] }],
+  },
+  {
+    step: 7,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 2,
+    autoChord: ["G1", "F4", "G#4"],
+    autoOffbeat: [{ beat: 1, notes: ["G2", "D3"] }],
+  },
   // 小節4: ド - 伴奏コード: C（ウォーキング）
-  { step: 8,  phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 5, autoChord: ["C2", "C3", "C4", "E4"], autoOffbeat: [{ beat: 1, notes: ["G1", "G2"] }, { beat: 2, notes: ["A1", "A2"] }, { beat: 3, notes: ["B1", "B2"] }, { beat: 4, notes: ["C2", "C3"] }] },
+  {
+    step: 8,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 5,
+    autoChord: ["C2", "C3", "C4", "E4"],
+    autoOffbeat: [
+      { beat: 1, notes: ["G1", "G2"] },
+      { beat: 2, notes: ["A1", "A2"] },
+      { beat: 3, notes: ["B1", "B2"] },
+      { beat: 4, notes: ["C2", "C3"] },
+    ],
+  },
   // 小節5: ド ミ ファ - 伴奏コード: C
-  { step: 9,  phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["C4"], autoOffbeat: [] },
-  { step: 10, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["E4"], autoOffbeat: [] },
-  { step: 11, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["F4"], autoOffbeat: [] },
+  {
+    step: 9,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["C4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 10,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 11,
+    phrase: 2,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["F4"],
+    autoOffbeat: [],
+  },
   // 小節6: ソ - 伴奏コード: C
-  { step: 12, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 5, autoChord: ["C2", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }, { beat: 2, notes: ["G1"] }, { beat: 3, notes: ["E3", "G3"] }, { beat: 4, notes: ["C2"] }] },
+  {
+    step: 12,
+    phrase: 2,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 5,
+    autoChord: ["C2", "G4", "C5"],
+    autoOffbeat: [
+      { beat: 1, notes: ["E3", "G3"] },
+      { beat: 2, notes: ["G1"] },
+      { beat: 3, notes: ["E3", "G3"] },
+      { beat: 4, notes: ["C2"] },
+    ],
+  },
   // 小節7: ド ミ ファ - 伴奏コード: C
-  { step: 13, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["B1", "B2", "C4"], autoOffbeat: [] },
-  { step: 14, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["A1", "A2", "E4"], autoOffbeat: [] },
-  { step: 15, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["G1", "G2", "F4"], autoOffbeat: [] },
+  {
+    step: 13,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["B1", "B2", "C4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 14,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["A1", "A2", "E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 15,
+    phrase: 2,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["G1", "G2", "F4"],
+    autoOffbeat: [],
+  },
   // 小節8: ソ - 伴奏コード: C
-  { step: 16, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 5, autoChord: ["C2", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }, { beat: 2, notes: ["G1"] }, { beat: 3, notes: ["E3", "G3"] }, { beat: 4, notes: ["C2"] }] },
+  {
+    step: 16,
+    phrase: 2,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 5,
+    autoChord: ["C2", "G4", "C5"],
+    autoOffbeat: [
+      { beat: 1, notes: ["E3", "G3"] },
+      { beat: 2, notes: ["G1"] },
+      { beat: 3, notes: ["E3", "G3"] },
+      { beat: 4, notes: ["C2"] },
+    ],
+  },
   // 小節9: ド ミ ファ - 伴奏コード: C
-  { step: 17, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["B1", "B2", "C4"], autoOffbeat: [] },
-  { step: 18, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["A1", "A2", "E4"], autoOffbeat: [] },
-  { step: 19, phrase: 2, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["G1", "G2", "F4"], autoOffbeat: [] },
+  {
+    step: 17,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["B1", "B2", "C4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 18,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["A1", "A2", "E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 19,
+    phrase: 2,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["G1", "G2", "F4"],
+    autoOffbeat: [],
+  },
   // 小節10: ソ ミ - 伴奏コード: C→E7
-  { step: 20, phrase: 2, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 2, autoChord: ["C2", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }] },
-  { step: 21, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 2, autoChord: ["E2", "E4", "G#4"], autoOffbeat: [{ beat: 1, notes: ["D3", "G#3"] }] },
+  {
+    step: 20,
+    phrase: 2,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 2,
+    autoChord: ["C2", "G4", "C5"],
+    autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }],
+  },
+  {
+    step: 21,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 2,
+    autoChord: ["E2", "E4", "G#4"],
+    autoOffbeat: [{ beat: 1, notes: ["D3", "G#3"] }],
+  },
   // 小節11: ラ(低) ミ - 伴奏コード: Am→D7
-  { step: 22, phrase: 2, fingerNum: 1, fingerKey: "THUMB",  note: "ラ(低)",  rightNote: "A4", freq: 440.00, beats: 2, autoChord: ["A1", "C4", "E4"], autoOffbeat: [{ beat: 1, notes: ["A2", "E3"] }] },
-  { step: 23, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 2, autoChord: ["D2", "E4", "A4"], autoOffbeat: [{ beat: 1, notes: ["F#3", "C4"] }] },
+  {
+    step: 22,
+    phrase: 2,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ラ(低)",
+    rightNote: "A4",
+    freq: 440.0,
+    beats: 2,
+    autoChord: ["A1", "C4", "E4"],
+    autoOffbeat: [{ beat: 1, notes: ["A2", "E3"] }],
+  },
+  {
+    step: 23,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 2,
+    autoChord: ["D2", "E4", "A4"],
+    autoOffbeat: [{ beat: 1, notes: ["F#3", "C4"] }],
+  },
   // 小節12: レ - 伴奏コード: G7
-  { step: 24, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ",     rightNote: "D5", freq: 587.33, beats: 5, autoChord: ["G2", "D3", "F4", "B4"], autoOffbeat: [{ beat: 0.5, notes: ["B2"] }, { beat: 1.5, notes: ["G3"] }, { beat: 2, notes: ["D3"] }, { beat: 2.5, notes: ["B2"] }, { beat: 3, notes: ["G2"] }, { beat: 3.5, notes: ["D2"] }, { beat: 4, notes: ["G1"] }] },
+  {
+    step: 24,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 5,
+    autoChord: ["G2", "D3", "F4", "B4"],
+    autoOffbeat: [
+      { beat: 0.5, notes: ["B2"] },
+      { beat: 1.5, notes: ["G3"] },
+      { beat: 2, notes: ["D3"] },
+      { beat: 2.5, notes: ["B2"] },
+      { beat: 3, notes: ["G2"] },
+      { beat: 3.5, notes: ["D2"] },
+      { beat: 4, notes: ["G1"] },
+    ],
+  },
   // 小節13: ミ ミ レ - 伴奏コード: G7
-  { step: 25, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["E4"], autoOffbeat: [] },
-  { step: 26, phrase: 2, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["G1", "G2", "E4", "B4"], autoOffbeat: [] },
-  { step: 27, phrase: 2, fingerNum: 2, fingerKey: "INDEX",  note: "レ",     rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["D4", "F4"], autoOffbeat: [] },
+  {
+    step: 25,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["E4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 26,
+    phrase: 2,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["G1", "G2", "E4", "B4"],
+    autoOffbeat: [],
+  },
+  {
+    step: 27,
+    phrase: 2,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["D4", "F4"],
+    autoOffbeat: [],
+  },
   // 小節14: ド ド - 伴奏コード: C（ウォーキング）
-  { step: 28, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 3, autoChord: ["C2", "C3", "C4", "E4"], autoOffbeat: [{ beat: 1, notes: ["E2", "E3"] }, { beat: 2, notes: ["F2", "F3"] }] },
-  { step: 29, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 1, autoChord: ["F#2", "F#3", "C4", "E4"], autoOffbeat: [] },
+  {
+    step: 28,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 3,
+    autoChord: ["C2", "C3", "C4", "E4"],
+    autoOffbeat: [
+      { beat: 1, notes: ["E2", "E3"] },
+      { beat: 2, notes: ["F2", "F3"] },
+    ],
+  },
+  {
+    step: 29,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+    autoChord: ["F#2", "F#3", "C4", "E4"],
+    autoOffbeat: [],
+  },
   // 小節15: ミ ソ - 伴奏コード: C→C7
-  { step: 30, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 2, autoChord: ["G2", "G3", "E4", "G4"], autoOffbeat: [{ beat: 1, notes: ["E2", "E3"] }] },
-  { step: 31, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 2, autoChord: ["C2", "C3", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["A#1", "A#2"] }] },
+  {
+    step: 30,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 2,
+    autoChord: ["G2", "G3", "E4", "G4"],
+    autoOffbeat: [{ beat: 1, notes: ["E2", "E3"] }],
+  },
+  {
+    step: 31,
+    phrase: 3,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 2,
+    autoChord: ["C2", "C3", "G4", "C5"],
+    autoOffbeat: [{ beat: 1, notes: ["A#1", "A#2"] }],
+  },
   // 小節16: ソ ファ - 伴奏コード: F
-  { step: 32, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 1, autoChord: ["F1", "G4", "C5"], autoOffbeat: [] },
-  { step: 33, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 4, autoChord: ["C3", "F3", "A3", "F4", "C5"], autoOffbeat: [{ beat: 1.5, notes: ["C3", "F3", "A3"] }, { beat: 2.5, notes: ["C3", "F3", "A3"] }, { beat: 3, notes: ["C3", "F3", "A3"] }] },
+  {
+    step: 32,
+    phrase: 3,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+    autoChord: ["F1", "G4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 33,
+    phrase: 3,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 4,
+    autoChord: ["C3", "F3", "A3", "F4", "C5"],
+    autoOffbeat: [
+      { beat: 1.5, notes: ["C3", "F3", "A3"] },
+      { beat: 2.5, notes: ["C3", "F3", "A3"] },
+      { beat: 3, notes: ["C3", "F3", "A3"] },
+    ],
+  },
   // 小節17: ファ ミ ファ - 伴奏コード: F→Fm
-  { step: 34, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["F4", "C5"], autoOffbeat: [] },
-  { step: 35, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 1, autoChord: ["G#2", "E4", "C5"], autoOffbeat: [] },
-  { step: 36, phrase: 3, fingerNum: 4, fingerKey: "RING",   note: "ファ",    rightNote: "F5", freq: 698.46, beats: 1, autoChord: ["F3", "G#3", "F4", "C5"], autoOffbeat: [] },
+  {
+    step: 34,
+    phrase: 3,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["F4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 35,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+    autoChord: ["G#2", "E4", "C5"],
+    autoOffbeat: [],
+  },
+  {
+    step: 36,
+    phrase: 3,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "ファ",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+    autoChord: ["F3", "G#3", "F4", "C5"],
+    autoOffbeat: [],
+  },
   // 小節18: ソ ミ - 伴奏コード: C→C#dim
-  { step: 37, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ソ",     rightNote: "G5", freq: 783.99, beats: 2, autoChord: ["C2", "G4", "C5"], autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }] },
-  { step: 38, phrase: 3, fingerNum: 3, fingerKey: "MIDDLE", note: "ミ",     rightNote: "E5", freq: 659.26, beats: 2, autoChord: ["C#2", "G4", "A#4"], autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }] },
+  {
+    step: 37,
+    phrase: 3,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ソ",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 2,
+    autoChord: ["C2", "G4", "C5"],
+    autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }],
+  },
+  {
+    step: 38,
+    phrase: 3,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "ミ",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 2,
+    autoChord: ["C#2", "G4", "A#4"],
+    autoOffbeat: [{ beat: 1, notes: ["E3", "G3"] }],
+  },
   // 小節19: ド レ - 伴奏コード: Dm7→G7
-  { step: 39, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 3, autoChord: ["D2", "D4", "F4"], autoOffbeat: [{ beat: 1, notes: ["F3", "A3", "C4"] }, { beat: 2, notes: ["G2"] }] },
-  { step: 40, phrase: 3, fingerNum: 2, fingerKey: "INDEX",  note: "レ",     rightNote: "D5", freq: 587.33, beats: 1, autoChord: ["F3", "B3", "F4", "G#4"], autoOffbeat: [] },
+  {
+    step: 39,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 3,
+    autoChord: ["D2", "D4", "F4"],
+    autoOffbeat: [
+      { beat: 1, notes: ["F3", "A3", "C4"] },
+      { beat: 2, notes: ["G2"] },
+    ],
+  },
+  {
+    step: 40,
+    phrase: 3,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "レ",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+    autoChord: ["F3", "B3", "F4", "G#4"],
+    autoOffbeat: [],
+  },
   // 小節20: ド - 伴奏コード: C（ベース下降）
-  { step: 41, phrase: 3, fingerNum: 1, fingerKey: "THUMB",  note: "ド",     rightNote: "C5", freq: 523.25, beats: 6, autoChord: ["A1", "C2", "E4"], autoOffbeat: [{ beat: 1, notes: ["F2", "C3", "F3"] }, { beat: 2, notes: ["E2", "C3", "E3"] }, { beat: 3, notes: ["D2", "C3", "D3"] }, { beat: 4, notes: ["C2", "C3"] }] },
+  {
+    step: 41,
+    phrase: 3,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "ド",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 6,
+    autoChord: ["A1", "C2", "E4"],
+    autoOffbeat: [
+      { beat: 1, notes: ["F2", "C3", "F3"] },
+      { beat: 2, notes: ["E2", "C3", "E3"] },
+      { beat: 3, notes: ["D2", "C3", "D3"] },
+      { beat: 4, notes: ["C2", "C3"] },
+    ],
+  },
   // 小節21: ド(高) - 伴奏コード: C（終止）
-  { step: 42, phrase: 3, fingerNum: 5, fingerKey: "PINKY",  note: "ド(高)",  rightNote: "C6", freq: 1046.50, beats: 2, autoChord: ["C3", "C4", "C5", "E5"], autoOffbeat: [] }
+  {
+    step: 42,
+    phrase: 3,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "ド(高)",
+    rightNote: "C6",
+    freq: 1046.5,
+    beats: 2,
+    autoChord: ["C3", "C4", "C5", "E5"],
+    autoOffbeat: [],
+  },
 ];
 
 // 親指から1本ずつ順番に選択されていく「あいうえお」リハビリシーケンス
 const AIUEO_STEP_SEQUENCE = [
-  { step: 1, phrase: 1, fingerNum: 1, fingerKey: "THUMB",  note: "あ", rightNote: "C5", freq: 523.25, beats: 1 },
-  { step: 2, phrase: 1, fingerNum: 2, fingerKey: "INDEX",  note: "い", rightNote: "D5", freq: 587.33, beats: 1 },
-  { step: 3, phrase: 1, fingerNum: 3, fingerKey: "MIDDLE", note: "う", rightNote: "E5", freq: 659.26, beats: 1 },
-  { step: 4, phrase: 1, fingerNum: 4, fingerKey: "RING",   note: "え", rightNote: "F5", freq: 698.46, beats: 1 },
-  { step: 5, phrase: 1, fingerNum: 5, fingerKey: "PINKY",  note: "お", rightNote: "G5", freq: 783.99, beats: 1 }
+  {
+    step: 1,
+    phrase: 1,
+    fingerNum: 1,
+    fingerKey: "THUMB",
+    note: "あ",
+    rightNote: "C5",
+    freq: 523.25,
+    beats: 1,
+  },
+  {
+    step: 2,
+    phrase: 1,
+    fingerNum: 2,
+    fingerKey: "INDEX",
+    note: "い",
+    rightNote: "D5",
+    freq: 587.33,
+    beats: 1,
+  },
+  {
+    step: 3,
+    phrase: 1,
+    fingerNum: 3,
+    fingerKey: "MIDDLE",
+    note: "う",
+    rightNote: "E5",
+    freq: 659.26,
+    beats: 1,
+  },
+  {
+    step: 4,
+    phrase: 1,
+    fingerNum: 4,
+    fingerKey: "RING",
+    note: "え",
+    rightNote: "F5",
+    freq: 698.46,
+    beats: 1,
+  },
+  {
+    step: 5,
+    phrase: 1,
+    fingerNum: 5,
+    fingerKey: "PINKY",
+    note: "お",
+    rightNote: "G5",
+    freq: 783.99,
+    beats: 1,
+  },
 ];
 
 // 演奏曲リスト（親指順ステップ演奏 ＆ フリーセッション）
@@ -1080,38 +2603,38 @@ export const SONGS = {
     id: "aiueo_step",
     title: "あいうえお（親指順）",
     bpm: 100,
-    sequence: AIUEO_STEP_SEQUENCE
+    sequence: AIUEO_STEP_SEQUENCE,
   },
   free_session: {
     id: "free_session",
     title: "フリーセッション (自由演奏)",
     isFreeSession: true,
-    sequence: []
+    sequence: [],
   },
   ode_to_joy: {
     id: "ode_to_joy",
     title: "よろこびのうた",
     bpm: 100, // カウントインと伴奏の基準テンポ（演奏中は打鍵ペースに追従）
-    sequence: ODE_TO_JOY_SEQUENCE
+    sequence: ODE_TO_JOY_SEQUENCE,
   },
   mary_had_a_little_lamb: {
     id: "mary_had_a_little_lamb",
     title: "メリーさんのひつじ",
     bpm: 100,
-    sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE
+    sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE,
   },
   mary: {
     id: "mary_had_a_little_lamb",
     title: "メリーさんのひつじ",
     bpm: 100,
-    sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE
+    sequence: MARY_HAD_A_LITTLE_LAMB_SEQUENCE,
   },
   saints: {
     id: "saints",
     title: "聖者の行進",
     bpm: 120,
-    sequence: SAINTS_SEQUENCE
-  }
+    sequence: SAINTS_SEQUENCE,
+  },
 };
 
 export let currentSongId = "aiueo_step";
@@ -1122,19 +2645,19 @@ export let currentFingerKey = "THUMB"; // 初期基準指: THUMB (1: 親指)
 // ==========================================
 // 自動伴奏（和音・裏拍）の発音管理
 // ==========================================
-const MELODY_VELOCITY = 0.85;         // メロディ音量
-const ACCOMP_VELOCITY = 0.55;          // 伴奏音量（和音が重なるのでメロディより控えめに）
-const DEFAULT_BEAT_MS = 600;           // 曲にテンポ指定がないときの1拍の長さ（♩=100）
-const MIN_BEAT_MS = 250;               // ♩=240 より速い打鍵間隔は誤検出として無視
-const MAX_BEAT_MS = 1500;              // ♩=40 より遅い間隔は「待っていた」とみなして無視
-const TEMPO_SAMPLE_COUNT = 3;          // テンポ推定に使う直近の打鍵間隔の数（中央値をとる）
-const TEMPO_FOLLOW_RATE = 0.7;         // 新しい推定値を反映する割合（大きいほど素早く追従）
-const TEMPO_MAX_SAMPLE_BEATS = 2;      // これより長い音符の間隔はテンポ推定に使わない（伸ばす長さは人によってまちまちなため）
+const MELODY_VELOCITY = 0.85; // メロディ音量
+const ACCOMP_VELOCITY = 0.55; // 伴奏音量（和音が重なるのでメロディより控えめに）
+const DEFAULT_BEAT_MS = 600; // 曲にテンポ指定がないときの1拍の長さ（♩=100）
+const MIN_BEAT_MS = 250; // ♩=240 より速い打鍵間隔は誤検出として無視
+const MAX_BEAT_MS = 1500; // ♩=40 より遅い間隔は「待っていた」とみなして無視
+const TEMPO_SAMPLE_COUNT = 3; // テンポ推定に使う直近の打鍵間隔の数（中央値をとる）
+const TEMPO_FOLLOW_RATE = 0.7; // 新しい推定値を反映する割合（大きいほど素早く追従）
+const TEMPO_MAX_SAMPLE_BEATS = 2; // これより長い音符の間隔はテンポ推定に使わない（伸ばす長さは人によってまちまちなため）
 let estimatedBeatMs = DEFAULT_BEAT_MS; // 演奏者の打鍵ペースから推定した1拍の長さ
 let tempoSamples = [];
 let lastHitTime = null;
 let lastHitBeats = null;
-let pendingOffbeats = [];              // 予約中の裏拍伴奏 { id, notes }
+let pendingOffbeats = []; // 予約中の裏拍伴奏 { id, notes }
 
 /**
  * 現在の曲の基準テンポ（1拍のミリ秒）
@@ -1165,7 +2688,9 @@ function flushPendingOffbeats(nextHasBass) {
   const first = pendingOffbeats[0];
   cancelPendingOffbeats();
   if (first && !nextHasBass) {
-    first.notes.forEach((n) => playTapSound(n, false, ACCOMP_VELOCITY, "pedal"));
+    first.notes.forEach((n) =>
+      playTapSound(n, false, ACCOMP_VELOCITY, "pedal"),
+    );
   }
 }
 
@@ -1174,7 +2699,12 @@ function flushPendingOffbeats(nextHasBass) {
  * 直近の間隔の中央値をとって外れ値に強くしつつ、新しい値を大きく反映して速さの変化に素早く追従する
  */
 function updateTempoEstimate(now) {
-  if (lastHitTime === null || !lastHitBeats || lastHitBeats > TEMPO_MAX_SAMPLE_BEATS) return;
+  if (
+    lastHitTime === null ||
+    !lastHitBeats ||
+    lastHitBeats > TEMPO_MAX_SAMPLE_BEATS
+  )
+    return;
   const beatMs = (now - lastHitTime) / lastHitBeats;
   if (beatMs < MIN_BEAT_MS || beatMs > MAX_BEAT_MS) return;
 
@@ -1182,7 +2712,8 @@ function updateTempoEstimate(now) {
   if (tempoSamples.length > TEMPO_SAMPLE_COUNT) tempoSamples.shift();
   const sorted = [...tempoSamples].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
-  estimatedBeatMs = estimatedBeatMs * (1 - TEMPO_FOLLOW_RATE) + median * TEMPO_FOLLOW_RATE;
+  estimatedBeatMs =
+    estimatedBeatMs * (1 - TEMPO_FOLLOW_RATE) + median * TEMPO_FOLLOW_RATE;
 }
 
 /**
@@ -1210,7 +2741,11 @@ function playAccompaniment(target) {
   lastHitBeats = target.beats || 1;
 
   // 低音（C4未満）が鳴る拍でペダルを踏み替え、前の和音の響きを自然に消してから新しい和音を伸ばす
-  const chord = Array.isArray(target.autoChord) ? target.autoChord : target.autoLeftNote ? [target.autoLeftNote] : [];
+  const chord = Array.isArray(target.autoChord)
+    ? target.autoChord
+    : target.autoLeftNote
+      ? [target.autoLeftNote]
+      : [];
   const hasBass = chord.some(isBassNote);
   flushPendingOffbeats(hasBass);
   if (hasBass) {
@@ -1229,7 +2764,6 @@ function playAccompaniment(target) {
     });
   }
 }
-
 
 // 3秒カウントダウン状態管理
 export let isCountingDown = false;
@@ -1381,7 +2915,9 @@ export function selectSong(songId, withCountdown = true) {
 
   if (targetSong.isFreeSession) {
     renderSongGuideUI();
-    console.log("[FREE SESSION] 5本指完全フリーセッションモードに切り替えました");
+    console.log(
+      "[FREE SESSION] 5本指完全フリーセッションモードに切り替えました",
+    );
     return;
   }
 
@@ -1394,7 +2930,9 @@ export function selectSong(songId, withCountdown = true) {
   if (withCountdown) {
     // カウントダウン開始
     startCountdown(() => {
-      console.log(`[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`);
+      console.log(
+        `[SONG] ${SONGS[songId].title} 開始！第1音: ${currentSequence[0].note} (${currentSequence[0].fingerKey})`,
+      );
     });
   }
 }
@@ -1402,10 +2940,16 @@ export function selectSong(songId, withCountdown = true) {
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
 // minCutoffを0.85Hzに最適化し、静止時・低速時の小刻みなジッター・マーカー震えを強固に吸収
 // betaを0.012に設定して素早いタップ動作にはカットオフを自動で引き上げ遅延ゼロで追従
-const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(0.85, 0.012, 1.8));
+const landmarkFilters = Array.from(
+  { length: 21 },
+  () => new PointFilter(0.85, 0.012, 1.8),
+);
 
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
-const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({
+  x: 0,
+  y: 0,
+}));
 
 // 一時的な検出ロスト対策（打鍵時の陰影による瞬断で骨格が点滅・ジャンプするのを防止しつつ、退出時は約0.1秒で即消去）
 let lostFrames = 0;
@@ -1421,17 +2965,32 @@ let lastFilteredFingerKey = null;
 // 手の骨格コネクション定義（全21ランドマーク間の接続ペア [startIdx, endIdx]）
 const HAND_CONNECTIONS = [
   // 手のひら
-  [0, 1], [0, 5], [5, 9], [9, 13], [13, 17], [0, 17],
+  [0, 1],
+  [0, 5],
+  [5, 9],
+  [9, 13],
+  [13, 17],
+  [0, 17],
   // 親指
-  [1, 2], [2, 3], [3, 4],
+  [1, 2],
+  [2, 3],
+  [3, 4],
   // 人差し指（背景薄表示）
-  [5, 6], [6, 7], [7, 8],
+  [5, 6],
+  [6, 7],
+  [7, 8],
   // 中指
-  [9, 10], [10, 11], [11, 12],
+  [9, 10],
+  [10, 11],
+  [11, 12],
   // 薬指
-  [13, 14], [14, 15], [15, 16],
+  [13, 14],
+  [14, 15],
+  [15, 16],
   // 小指
-  [17, 18], [18, 19], [19, 20]
+  [17, 18],
+  [18, 19],
+  [19, 20],
 ];
 
 // 指ごとの対象外骨格接続線のキャッシュ（毎フレームのfilter処理・配列アロケーションを完全排除）
@@ -1450,7 +3009,7 @@ export function updateCachedConnections(fingerKey) {
   const cfg = FINGER_CONFIGS[fingerKey] || FINGER_CONFIGS.THUMB;
   const targetIndices = cfg.indices;
   const connections = HAND_CONNECTIONS.filter(
-    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e))
+    ([s, e]) => !(targetIndices.includes(s) && targetIndices.includes(e)),
   );
   cachedOtherConnections[fingerKey] = connections;
   currentOtherConnections = connections;
@@ -1464,17 +3023,17 @@ export const FINGER_VY_THRESHOLDS = {
   INDEX: 1.4,
   MIDDLE: 1.4,
   RING: 1.3,
-  PINKY: 1.3
+  PINKY: 1.3,
 };
 
 // 指ごとの学習閾値モデル
 // 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
 export const fingerThresholdModels = {
   THUMB: { hitRy: 0.35, liftRy: 0.28, samples: 0 },
-  INDEX: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
+  INDEX: { hitRy: 0.5, liftRy: 0.42, samples: 0 },
   MIDDLE: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
   RING: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
-  PINKY: { hitRy: 0.45, liftRy: 0.38, samples: 0 }
+  PINKY: { hitRy: 0.45, liftRy: 0.38, samples: 0 },
 };
 
 // 5本指それぞれの独立打鍵ステート（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
@@ -1483,7 +3042,7 @@ export const fingerTapStates = {
   INDEX: "IDLE",
   MIDDLE: "IDLE",
   RING: "IDLE",
-  PINKY: "IDLE"
+  PINKY: "IDLE",
 };
 
 // フリーセッション用：全指打鍵ロックアウト（不応期）管理
@@ -1500,7 +3059,7 @@ export const fingerDatasets = {
   MIDDLE: [],
   RING: [],
   PINKY: [],
-  INDEX: []
+  INDEX: [],
 };
 
 /**
@@ -1518,7 +3077,9 @@ export function setTargetFinger(fingerKey) {
   // 指別学習モデルの閾値を適用
   applyFingerThreshold(fingerKey);
 
-  console.log(`[FINGER TARGET] ターゲット指: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`);
+  console.log(
+    `[FINGER TARGET] ターゲット指: ${FINGER_CONFIGS[fingerKey].label} (TH: ${hitRyThreshold.toFixed(2)})`,
+  );
 }
 
 // 初回ターゲット指の骨格接続線を初期化
@@ -1562,7 +3123,7 @@ export function init88KeyPianoKeyboard() {
         octave: oct,
         name: whiteNames[i],
         index: wIndex,
-        isC
+        isC,
       });
 
       if (hasBlackRight[i]) {
@@ -1571,14 +3132,20 @@ export function init88KeyPianoKeyboard() {
           note: bNoteName,
           octave: oct,
           name: `${whiteNames[i]}#`,
-          leftWhiteIndex: wIndex
+          leftWhiteIndex: wIndex,
         });
       }
     }
   }
 
   // 3. オクターブ8 (C8)
-  whiteKeys.push({ note: "C8", octave: 8, name: "ド", index: whiteKeys.length, isC: true });
+  whiteKeys.push({
+    note: "C8",
+    octave: 8,
+    name: "ド",
+    index: whiteKeys.length,
+    isC: true,
+  });
 
   const totalWhite = whiteKeys.length; // 52鍵
 
@@ -1760,13 +3327,18 @@ export function renderSongGuideUI() {
   if (!currentItem) return;
 
   // 画面右上：右手運指ガイドウィジェットのハイライト更新
-  updateHandGuideWidget(currentItem.fingerKey, currentItem.fingerNum, currentItem.note);
+  updateHandGuideWidget(
+    currentItem.fingerKey,
+    currentItem.fingerNum,
+    currentItem.note,
+  );
 
   // 画面上部：ピアノ鍵盤のターゲット音ハイライト更新
   updatePianoKeyboardTarget(currentItem.rightNote);
 
   if (targetFingerVal) {
-    const fingerName = FINGER_NAMES[currentItem.fingerKey] || currentItem.fingerKey;
+    const fingerName =
+      FINGER_NAMES[currentItem.fingerKey] || currentItem.fingerKey;
     targetFingerVal.textContent = `右手 ${currentItem.fingerNum} ${currentItem.note} (${fingerName})`;
     targetFingerVal.classList.add("spike-highlight");
     setTimeout(() => {
@@ -1801,19 +3373,25 @@ export function getTargetFingerColor(stepIndex) {
       g: 229,
       b: 255,
       rgb: "0, 229, 255",
-      name: "cyan"
+      name: "cyan",
     };
   }
 
   // 連続打鍵グループの先頭を探索
   let start = stepIndex;
-  while (start > 0 && currentSequence[start - 1].fingerKey === current.fingerKey) {
+  while (
+    start > 0 &&
+    currentSequence[start - 1].fingerKey === current.fingerKey
+  ) {
     start--;
   }
 
   // 連続打鍵グループの末尾を探索
   let end = stepIndex;
-  while (end < currentSequence.length - 1 && currentSequence[end + 1].fingerKey === current.fingerKey) {
+  while (
+    end < currentSequence.length - 1 &&
+    currentSequence[end + 1].fingerKey === current.fingerKey
+  ) {
     end++;
   }
 
@@ -1833,7 +3411,7 @@ export function getTargetFingerColor(stepIndex) {
         g: 230,
         b: 0,
         rgb: "255, 230, 0",
-        name: "yellow"
+        name: "yellow",
       };
     } else if (idxInGroup === 1) {
       // 2打目: 緑色 (Green)
@@ -1847,7 +3425,7 @@ export function getTargetFingerColor(stepIndex) {
         g: 255,
         b: 136,
         rgb: "0, 255, 136",
-        name: "green"
+        name: "green",
       };
     } else {
       // 3打目: 青色 (Blue)
@@ -1861,7 +3439,7 @@ export function getTargetFingerColor(stepIndex) {
         g: 180,
         b: 255,
         rgb: "0, 180, 255",
-        name: "blue"
+        name: "blue",
       };
     }
   }
@@ -1877,7 +3455,7 @@ export function getTargetFingerColor(stepIndex) {
     g: 229,
     b: 255,
     rgb: "0, 229, 255",
-    name: "cyan"
+    name: "cyan",
   };
 }
 
@@ -1887,11 +3465,11 @@ export function getTargetFingerColor(stepIndex) {
 
 // 手のイラストSVG内における各指先の中央ピクセル座標（200x200 viewBox基準）
 const GUIDE_FINGER_SVG_COORDS = {
-  THUMB:  { x: 42,   y: 104 },
-  INDEX:  { x: 85.5, y: 36  },
-  MIDDLE: { x: 106,  y: 24  },
-  RING:   { x: 126.5,y: 34  },
-  PINKY:  { x: 146.5,y: 52  }
+  THUMB: { x: 42, y: 104 },
+  INDEX: { x: 85.5, y: 36 },
+  MIDDLE: { x: 106, y: 24 },
+  RING: { x: 126.5, y: 34 },
+  PINKY: { x: 146.5, y: 52 },
 };
 
 /**
@@ -1906,10 +3484,11 @@ export function getGuideFingerScreenPos(fingerKey) {
   }
   const rect = widget.getBoundingClientRect();
   const scale = rect.width / 200;
-  const c = GUIDE_FINGER_SVG_COORDS[fingerKey] || GUIDE_FINGER_SVG_COORDS.MIDDLE;
+  const c =
+    GUIDE_FINGER_SVG_COORDS[fingerKey] || GUIDE_FINGER_SVG_COORDS.MIDDLE;
   return {
     x: rect.left + c.x * scale,
-    y: rect.top + c.y * scale
+    y: rect.top + c.y * scale,
   };
 }
 
@@ -1938,7 +3517,7 @@ export function triggerNoteHitEffect(stepIndex) {
     maxRadius: 52,
     color: color.stroke || "#00e5ff",
     alpha: 1.0,
-    decay: 0.05
+    decay: 0.05,
   });
 
   // 2. 放射状の光火花パーティクル
@@ -1955,7 +3534,7 @@ export function triggerNoteHitEffect(stepIndex) {
       size: 3 + Math.random() * 2.5,
       color: color.fill || "#00e5ff",
       alpha: 1.0,
-      decay: 0.035 + Math.random() * 0.02
+      decay: 0.035 + Math.random() * 0.02,
     });
   }
 }
@@ -1979,7 +3558,7 @@ export function triggerFreeNoteHit(fingerKey) {
     maxRadius: 56,
     color: color.stroke || "#00e5ff",
     alpha: 1.0,
-    decay: 0.05
+    decay: 0.05,
   });
 
   // 2. 放射状の光火花パーティクル
@@ -1996,7 +3575,7 @@ export function triggerFreeNoteHit(fingerKey) {
       size: 3 + Math.random() * 2.5,
       color: color.fill || "#00e5ff",
       alpha: 1.0,
-      decay: 0.035 + Math.random() * 0.02
+      decay: 0.035 + Math.random() * 0.02,
     });
   }
 
@@ -2053,7 +3632,9 @@ function _unusedUpdateAndRenderNotes() {
     notesCtx.beginPath();
     notesCtx.moveTo(pos.x, 52);
     notesCtx.lineTo(pos.x, pos.y);
-    notesCtx.strokeStyle = isTarget ? "rgba(0, 229, 255, 0.18)" : "rgba(255, 255, 255, 0.04)";
+    notesCtx.strokeStyle = isTarget
+      ? "rgba(0, 229, 255, 0.18)"
+      : "rgba(255, 255, 255, 0.04)";
     notesCtx.lineWidth = isTarget ? 2.0 : 1.0;
     notesCtx.stroke();
   });
@@ -2103,13 +3684,25 @@ function _unusedUpdateAndRenderNotes() {
 
       // 外側ネオングロー
       notesCtx.beginPath();
-      notesCtx.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, radius);
+      notesCtx.roundRect(
+        -capsuleW / 2,
+        -capsuleH / 2,
+        capsuleW,
+        capsuleH,
+        radius,
+      );
       notesCtx.fillStyle = color.halo || "rgba(0, 229, 255, 0.3)";
       notesCtx.fill();
 
       // メインカプセル背景（ダーク半透明）
       notesCtx.beginPath();
-      notesCtx.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, radius);
+      notesCtx.roundRect(
+        -capsuleW / 2,
+        -capsuleH / 2,
+        capsuleW,
+        capsuleH,
+        radius,
+      );
       notesCtx.fillStyle = "rgba(10, 10, 15, 0.88)";
       notesCtx.fill();
 
@@ -2168,8 +3761,6 @@ function _unusedUpdateAndRenderNotes() {
 // ノーツ描画ループを開始
 requestAnimationFrame(updateAndRenderNotes);
 
-
-
 /**
  * 指定指の学習済み閾値をアクティブ閾値にセット
  * @param {string} fingerKey
@@ -2189,7 +3780,6 @@ export function applyFingerThreshold(fingerKey) {
     vThVal.textContent = vyTh.toFixed(1);
   }
 }
-
 
 /**
  * CSVステータス表示の更新
@@ -2223,11 +3813,25 @@ export function parseCsv(text, filename = "") {
   const headers = headerLine.split(",").map((h) => h.trim());
 
   const ryIdx = headers.indexOf("ry");
-  const labelIdx = headers.indexOf("label") !== -1 ? headers.indexOf("label") : headers.indexOf("is_hit");
-  const timeIdx = headers.indexOf("timestamp") !== -1 ? headers.indexOf("timestamp") : (headers.indexOf("timestamp_ms") !== -1 ? headers.indexOf("timestamp_ms") : headers.indexOf("time_sec"));
+  const labelIdx =
+    headers.indexOf("label") !== -1
+      ? headers.indexOf("label")
+      : headers.indexOf("is_hit");
+  const timeIdx =
+    headers.indexOf("timestamp") !== -1
+      ? headers.indexOf("timestamp")
+      : headers.indexOf("timestamp_ms") !== -1
+        ? headers.indexOf("timestamp_ms")
+        : headers.indexOf("time_sec");
 
-  const mcpYIdx = headers.indexOf("index_mcp_y") !== -1 ? headers.indexOf("index_mcp_y") : headers.indexOf("mcp_y");
-  const tipYIdx = headers.indexOf("index_tip_y") !== -1 ? headers.indexOf("index_tip_y") : headers.indexOf("tip_y");
+  const mcpYIdx =
+    headers.indexOf("index_mcp_y") !== -1
+      ? headers.indexOf("index_mcp_y")
+      : headers.indexOf("mcp_y");
+  const tipYIdx =
+    headers.indexOf("index_tip_y") !== -1
+      ? headers.indexOf("index_tip_y")
+      : headers.indexOf("tip_y");
 
   const results = [];
   let manualHitCount = 0;
@@ -2252,7 +3856,12 @@ export function parseCsv(text, filename = "") {
 
     if (ryIdx !== -1 && cols[ryIdx] !== undefined && cols[ryIdx] !== "") {
       ry = parseFloat(cols[ryIdx]);
-    } else if (mcpYIdx !== -1 && tipYIdx !== -1 && cols[mcpYIdx] && cols[tipYIdx]) {
+    } else if (
+      mcpYIdx !== -1 &&
+      tipYIdx !== -1 &&
+      cols[mcpYIdx] &&
+      cols[tipYIdx]
+    ) {
       const my = parseFloat(cols[mcpYIdx]);
       const ty = parseFloat(cols[tipYIdx]);
       if (!isNaN(my) && !isNaN(ty)) {
@@ -2264,13 +3873,17 @@ export function parseCsv(text, filename = "") {
       results.push({
         timestamp,
         ry,
-        isHit
+        isHit,
       });
     }
   }
 
   // もしファイル名に "tap" が含まれており、手動打鍵マークが0件の場合は自動ピーク検出を実行
-  if (filename.toLowerCase().includes("tap") && manualHitCount === 0 && results.length > 10) {
+  if (
+    filename.toLowerCase().includes("tap") &&
+    manualHitCount === 0 &&
+    results.length > 10
+  ) {
     autoDetectTapPeaks(results);
   }
 
@@ -2303,8 +3916,8 @@ function autoDetectTapPeaks(frames) {
       cur > rys[i - 2] &&
       cur >= rys[i + 2] &&
       cur > p75Ry &&
-      (cur - medianRy) > 0.08 &&
-      (i - lastHitIdx) > 10 // クールダウン（最低10フレーム離れている）
+      cur - medianRy > 0.08 &&
+      i - lastHitIdx > 10 // クールダウン（最低10フレーム離れている）
     ) {
       frames[i].isHit = true;
       lastHitIdx = i;
@@ -2312,7 +3925,9 @@ function autoDetectTapPeaks(frames) {
     }
   }
 
-  console.log(`[CSV PEAK] 打鍵ピーク自動検出: ${autoCount} 箇所の打鍵点を抽出 (Median=${medianRy.toFixed(2)}, P75=${p75Ry.toFixed(2)})`);
+  console.log(
+    `[CSV PEAK] 打鍵ピーク自動検出: ${autoCount} 箇所の打鍵点を抽出 (Median=${medianRy.toFixed(2)}, P75=${p75Ry.toFixed(2)})`,
+  );
 }
 
 /**
@@ -2360,7 +3975,7 @@ function trainModelForFinger(fingerKey) {
       .sort((a, b) => a - b);
     if (validAirRys.length > 0) {
       // 90パーセンタイルを空中最大変位として採用（異常外れ値をカット）
-      maxAirRy = validAirRys[Math.floor(validAirRys.length * 0.90)];
+      maxAirRy = validAirRys[Math.floor(validAirRys.length * 0.9)];
     }
   }
 
@@ -2370,7 +3985,8 @@ function trainModelForFinger(fingerKey) {
       .filter((f) => !f.isHit && f.ry !== null && !isNaN(f.ry))
       .map((f) => f.ry)
       .sort((a, b) => a - b);
-    maxAirRy = negRys.length > 0 ? negRys[Math.floor(negRys.length * 0.70)] : 0.0;
+    maxAirRy =
+      negRys.length > 0 ? negRys[Math.floor(negRys.length * 0.7)] : 0.0;
   }
 
   const samples = hitRys.length;
@@ -2379,18 +3995,20 @@ function trainModelForFinger(fingerKey) {
 
   if (samples > 0) {
     // 打鍵サンプルの中央値・第25%パーセンタイル値
-    const medianHitRy = hitRys[Math.floor(samples * 0.50)];
+    const medianHitRy = hitRys[Math.floor(samples * 0.5)];
     const p25HitRy = hitRys[Math.floor(samples * 0.25)];
 
     if (medianHitRy > maxAirRy) {
       // 空中最大と打鍵中央値の中間点に打鍵閾値を設定
       // 薬指（RING）は他指（中指・小指）との連動によるつられ下がり誤検知を防ぐため、やや高め（0.46）に設定
       // 親指（THUMB）は机面への垂直変位が小さいため緩和（0.30）して反応感度を向上
-      const hitRatio = fingerKey === "THUMB" ? 0.30 : (fingerKey === "RING" ? 0.46 : 0.45);
+      const hitRatio =
+        fingerKey === "THUMB" ? 0.3 : fingerKey === "RING" ? 0.46 : 0.45;
       hitTh = maxAirRy + (medianHitRy - maxAirRy) * hitRatio;
 
       // 速度ゲートにより机面待機誤爆が防止されているため、浅い打鍵でも確実に反応するよう適正範囲内にクランプ
-      const minHitTh = fingerKey === "THUMB" ? 0.30 : (fingerKey === "PINKY" ? 0.45 : 0.50);
+      const minHitTh =
+        fingerKey === "THUMB" ? 0.3 : fingerKey === "PINKY" ? 0.45 : 0.5;
       hitTh = Math.max(hitTh, minHitTh);
 
       // リフト閾値：全指で打鍵位置からわずかに指を浮かせるだけで素早くIDLE復帰できるよう、
@@ -2404,7 +4022,8 @@ function trainModelForFinger(fingerKey) {
     }
   } else {
     // 打鍵サンプルが0件の場合の安全マージン（親指は垂直変位が小さいため0.10、薬指は誤検知防止で0.20、他指は0.18）
-    const safetyMargin = fingerKey === "THUMB" ? 0.10 : (fingerKey === "RING" ? 0.20 : 0.18);
+    const safetyMargin =
+      fingerKey === "THUMB" ? 0.1 : fingerKey === "RING" ? 0.2 : 0.18;
     hitTh = maxAirRy + safetyMargin;
     liftTh = hitTh - 0.03;
   }
@@ -2412,14 +4031,13 @@ function trainModelForFinger(fingerKey) {
   fingerThresholdModels[fingerKey] = {
     hitRy: parseFloat(hitTh.toFixed(2)),
     liftRy: parseFloat(liftTh.toFixed(2)),
-    samples
+    samples,
   };
 
   console.log(
-    `[MODEL: ${fingerKey}] 学習完了: 打鍵=${samples}件 (空中Max=${maxAirRy.toFixed(3)}) -> 打鍵TH=${hitTh.toFixed(2)}, リフトTH=${liftTh.toFixed(2)}`
+    `[MODEL: ${fingerKey}] 学習完了: 打鍵=${samples}件 (空中Max=${maxAirRy.toFixed(3)}) -> 打鍵TH=${hitTh.toFixed(2)}, リフトTH=${liftTh.toFixed(2)}`,
   );
 }
-
 
 /**
  * 複数CSVテキストを一括パースしてデータセット配列に格納
@@ -2429,11 +4047,13 @@ function ingestCsvFiles(files) {
   for (const file of files) {
     const parsed = parseCsv(file.content, file.name);
     if (parsed.length > 0) {
-      const existIdx = testDataDatasets.findIndex((d) => d.filename === file.name);
+      const existIdx = testDataDatasets.findIndex(
+        (d) => d.filename === file.name,
+      );
       const datasetEntry = {
         filename: file.name,
         frames: parsed,
-        hitCount: parsed.filter((f) => f.isHit).length
+        hitCount: parsed.filter((f) => f.isHit).length,
       };
 
       if (existIdx !== -1) {
@@ -2450,9 +4070,11 @@ function ingestCsvFiles(files) {
   if (testDataDatasets.length > 0) {
     const totalHits = testDataFrames.filter((f) => f.isHit).length;
     trainModelFromCsv();
-    updateCsvStatus(`LOADED (${testDataDatasets.length} files, ${totalHits} hits)`);
+    updateCsvStatus(
+      `LOADED (${testDataDatasets.length} files, ${totalHits} hits)`,
+    );
     console.log(
-      `[CSV] 全読込成功: 計 ${testDataDatasets.length} ファイル, ${testDataFrames.length} フレーム (打鍵マーク: ${totalHits})`
+      `[CSV] 全読込成功: 計 ${testDataDatasets.length} ファイル, ${testDataFrames.length} フレーム (打鍵マーク: ${totalHits})`,
     );
   } else {
     updateCsvStatus("NOT LOADED");
@@ -2505,7 +4127,9 @@ export async function loadTestDataCsv() {
           const csvRes = await fetch(`./dataset/${fname}`);
           if (csvRes.ok) {
             const text = await csvRes.text();
-            const displayName = fname.includes("/") ? fname.split("/").pop() : fname;
+            const displayName = fname.includes("/")
+              ? fname.split("/").pop()
+              : fname;
             const fingerKey = detectFingerKey(fname);
             const parsed = parseCsv(text, displayName);
             if (parsed.length > 0) {
@@ -2514,7 +4138,7 @@ export async function loadTestDataCsv() {
                 path: fname,
                 fingerKey,
                 frames: parsed,
-                hitCount: parsed.filter((f) => f.isHit).length
+                hitCount: parsed.filter((f) => f.isHit).length,
               };
               fingerDatasets[fingerKey].push(entry);
               loadedFiles.push({ name: displayName, content: text });
@@ -2537,7 +4161,6 @@ export async function loadTestDataCsv() {
     applyFingerThreshold(currentFingerKey);
   }
 }
-
 
 // 先行MediaPipeモデルロード用Promise
 let handLandmarkerPromise = null;
@@ -2665,7 +4288,9 @@ async function handleStartPlay() {
           await requestWakeLock();
           if (startModal) startModal.classList.add("hidden");
           startCountdown(() => {
-            console.log(`[START] 演奏開始: ${SONGS[selectedStartSongId].title}`);
+            console.log(
+              `[START] 演奏開始: ${SONGS[selectedStartSongId].title}`,
+            );
           });
           updateStatus("トラッキング中");
         } catch (retryErr) {
@@ -2691,12 +4316,12 @@ async function handleStartPlay() {
  */
 async function initHandLandmarker() {
   const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
   );
 
   const modelPaths = [
     "./models/hand_landmarker.task",
-    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
   ];
 
   let loaded = false;
@@ -2709,13 +4334,13 @@ async function initHandLandmarker() {
       handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: modelPath,
-          delegate: "GPU"
+          delegate: "GPU",
         },
         runningMode: "VIDEO",
         numHands: 1,
         minHandDetectionConfidence: 0.4,
         minHandPresenceConfidence: 0.4,
-        minTrackingConfidence: 0.3
+        minTrackingConfidence: 0.3,
       });
       loaded = true;
       break;
@@ -2725,13 +4350,13 @@ async function initHandLandmarker() {
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: modelPath,
-            delegate: "CPU"
+            delegate: "CPU",
           },
           runningMode: "VIDEO",
           numHands: 1,
           minHandDetectionConfidence: 0.4,
           minHandPresenceConfidence: 0.4,
-          minTrackingConfidence: 0.3
+          minTrackingConfidence: 0.3,
         });
         loaded = true;
         break;
@@ -2754,13 +4379,16 @@ function getCompatibleUserMedia(constraints) {
   // セキュアコンテキスト（HTTPS / localhost）の先行検証
   if (!window.isSecureContext) {
     const secErr = new Error(
-      "非セキュア環境 (HTTP) のためカメラがブロックされています。HTTPS (https://...) でアクセスしてください。"
+      "非セキュア環境 (HTTP) のためカメラがブロックされています。HTTPS (https://...) でアクセスしてください。",
     );
     secErr.name = "SecurityError";
     throw secErr;
   }
 
-  if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+  if (
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function"
+  ) {
     return navigator.mediaDevices.getUserMedia(constraints);
   }
 
@@ -2776,7 +4404,9 @@ function getCompatibleUserMedia(constraints) {
     });
   }
 
-  const notSupportedErr = new Error("このブラウザはカメラAPIに対応していません。");
+  const notSupportedErr = new Error(
+    "このブラウザはカメラAPIに対応していません。",
+  );
   notSupportedErr.name = "NotSupportedError";
   throw notSupportedErr;
 }
@@ -2796,7 +4426,10 @@ function isTabletOrSquareScreen() {
 
 // 初期表示アスペクト比の設定（iPhone標準カメラアプリと同じ4:3比率を基準に設定）
 const initialAspect = 4 / 3;
-document.documentElement.style.setProperty("--video-aspect", initialAspect.toFixed(4));
+document.documentElement.style.setProperty(
+  "--video-aspect",
+  initialAspect.toFixed(4),
+);
 
 /**
  * インカメラ（フロントカメラ）の自動起動
@@ -2804,7 +4437,9 @@ document.documentElement.style.setProperty("--video-aspect", initialAspect.toFix
 async function startFrontCamera() {
   let stream = null;
 
-  console.log("[CAM] iPhone標準カメラアプリと同じ4:3比率（ネイティブセンサー画角）を最優先で要求");
+  console.log(
+    "[CAM] iPhone標準カメラアプリと同じ4:3比率（ネイティブセンサー画角）を最優先で要求",
+  );
 
   // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
   // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
@@ -2816,9 +4451,9 @@ async function startFrontCamera() {
         width: { ideal: 640 },
         height: { ideal: 480 },
         aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 }
+        frameRate: { ideal: 60 },
       },
-      audio: false
+      audio: false,
     },
     // 2. 720p (960x720, 4:3) 60fps志向
     {
@@ -2827,9 +4462,9 @@ async function startFrontCamera() {
         width: { ideal: 960 },
         height: { ideal: 720 },
         aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 }
+        frameRate: { ideal: 60 },
       },
-      audio: false
+      audio: false,
     },
     // 3. 480p (640x480, 4:3) 任意fps
     {
@@ -2837,9 +4472,9 @@ async function startFrontCamera() {
         facingMode: "user",
         width: { ideal: 640 },
         height: { ideal: 480 },
-        aspectRatio: { ideal: 4 / 3 }
+        aspectRatio: { ideal: 4 / 3 },
       },
-      audio: false
+      audio: false,
     },
     // 4. 720p (960x720, 4:3) 任意fps
     {
@@ -2847,30 +4482,30 @@ async function startFrontCamera() {
         facingMode: "user",
         width: { ideal: 960 },
         height: { ideal: 720 },
-        aspectRatio: { ideal: 4 / 3 }
+        aspectRatio: { ideal: 4 / 3 },
       },
-      audio: false
+      audio: false,
     },
     // 5. 4:3 任意解像度
     {
       video: {
         facingMode: "user",
-        aspectRatio: { ideal: 4 / 3 }
+        aspectRatio: { ideal: 4 / 3 },
       },
-      audio: false
+      audio: false,
     },
     // 6. インカメラ指定のみ
     {
       video: {
-        facingMode: "user"
+        facingMode: "user",
       },
-      audio: false
+      audio: false,
     },
     // 7. 最終フォールバック
     {
       video: true,
-      audio: false
-    }
+      audio: false,
+    },
   ];
 
   let lastError = null;
@@ -2893,7 +4528,12 @@ async function startFrontCamera() {
   }
 
   if (!stream) {
-    throw lastError || new Error("インカメラの取得に失敗しました。カメラのアクセス許可を確認してください。");
+    throw (
+      lastError ||
+      new Error(
+        "インカメラの取得に失敗しました。カメラのアクセス許可を確認してください。",
+      )
+    );
   }
 
   currentStream = stream;
@@ -2906,10 +4546,13 @@ async function startFrontCamera() {
       if (typeof track.getCapabilities === "function") {
         const caps = track.getCapabilities();
         console.log("[CAM CAPABILITIES]", caps);
-        const targetFps = caps.frameRate && caps.frameRate.max ? Math.min(60, caps.frameRate.max) : 60;
+        const targetFps =
+          caps.frameRate && caps.frameRate.max
+            ? Math.min(60, caps.frameRate.max)
+            : 60;
         if (typeof track.applyConstraints === "function") {
           await track.applyConstraints({
-            frameRate: { ideal: targetFps }
+            frameRate: { ideal: targetFps },
           });
         }
       }
@@ -2921,7 +4564,9 @@ async function startFrontCamera() {
     try {
       if (typeof track.getSettings === "function") {
         const settings = track.getSettings();
-        const fpsLabel = settings.frameRate ? `${Math.round(settings.frameRate)}fps` : "60fps";
+        const fpsLabel = settings.frameRate
+          ? `${Math.round(settings.frameRate)}fps`
+          : "60fps";
         const resLabel = settings.height ? `${settings.height}p` : "-";
         const aspectLabel =
           settings.width && settings.height
@@ -2929,12 +4574,14 @@ async function startFrontCamera() {
               Math.abs(settings.height / settings.width - 4 / 3) < 0.1
               ? "4:3"
               : Math.abs(settings.width / settings.height - 16 / 9) < 0.1 ||
-                Math.abs(settings.height / settings.width - 16 / 9) < 0.1
-              ? "16:9"
-              : `${(settings.width / settings.height).toFixed(2)}:1`
+                  Math.abs(settings.height / settings.width - 16 / 9) < 0.1
+                ? "16:9"
+                : `${(settings.width / settings.height).toFixed(2)}:1`
             : "";
         if (camInfo) {
-          camInfo.textContent = `FRONT (${resLabel} ${aspectLabel} ${fpsLabel})`.replace(/\s+/g, " ").trim();
+          camInfo.textContent = `FRONT (${resLabel} ${aspectLabel} ${fpsLabel})`
+            .replace(/\s+/g, " ")
+            .trim();
         }
       }
     } catch (settingErr) {
@@ -2953,7 +4600,8 @@ async function startFrontCamera() {
         const isAutoplayBlocked =
           playErr.name === "NotAllowedError" ||
           playErr.name === "AbortError" ||
-          (playErr.message && playErr.message.toLowerCase().includes("interact"));
+          (playErr.message &&
+            playErr.message.toLowerCase().includes("interact"));
 
         if (isAutoplayBlocked) {
           const autoErr = new Error("画面をタップしてカメラを開始してください");
@@ -2986,12 +4634,20 @@ async function startFrontCamera() {
 function updateCanvasResolution() {
   if (video.videoWidth && video.videoHeight) {
     const aspect = video.videoWidth / video.videoHeight;
-    document.documentElement.style.setProperty("--video-aspect", aspect.toFixed(4));
+    document.documentElement.style.setProperty(
+      "--video-aspect",
+      aspect.toFixed(4),
+    );
 
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+    if (
+      canvas.width !== video.videoWidth ||
+      canvas.height !== video.videoHeight
+    ) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      console.log(`[CANVAS] ビデオ解像度・アスペクト比を完全同期: ${canvas.width}x${canvas.height} (比率 ${aspect.toFixed(3)}:1)`);
+      console.log(
+        `[CANVAS] ビデオ解像度・アスペクト比を完全同期: ${canvas.width}x${canvas.height} (比率 ${aspect.toFixed(3)}:1)`,
+      );
     }
   }
 }
@@ -3006,7 +4662,10 @@ function processVideoFrame(frameTime) {
   if (!isPredicting) return;
 
   // カメラ解像度とCanvas解像度の完全一致を常時保証（iPadの向き変更・比率変更時の座標ズレ防止）
-  if (video.videoWidth && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) {
+  if (
+    video.videoWidth &&
+    (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)
+  ) {
     updateCanvasResolution();
   }
 
@@ -3042,15 +4701,19 @@ function schedulePredictLoop() {
   if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
     video.requestVideoFrameCallback((now, metadata) => {
       // presentationTimeはDOMHighResTimeStamp（ミリ秒単位）のためそのまま使用
-      const frameTime = (metadata && typeof metadata.presentationTime === "number")
-        ? metadata.presentationTime
-        : now;
+      const frameTime =
+        metadata && typeof metadata.presentationTime === "number"
+          ? metadata.presentationTime
+          : now;
       processVideoFrame(frameTime);
       schedulePredictLoop();
     });
   } else {
     requestAnimationFrame((now) => {
-      if (video.currentTime !== lastVideoTime && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      if (
+        video.currentTime !== lastVideoTime &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+      ) {
         lastVideoTime = video.currentTime;
         processVideoFrame(now);
       }
@@ -3083,8 +4746,8 @@ const MIN_SAFETY_X = 0.02;
 function isAnatomicallyRightHand(hand, isCurrentlyTracked = false) {
   if (!hand || hand.length < 21) return false;
 
-  const p0 = hand[0];   // 手首 (WRIST)
-  const p5 = hand[5];   // 人差し指付け根 (INDEX_FINGER_MCP)
+  const p0 = hand[0]; // 手首 (WRIST)
+  const p5 = hand[5]; // 人差し指付け根 (INDEX_FINGER_MCP)
   const p17 = hand[17]; // 小指付け根 (PINKY_MCP)
 
   const vIndexX = p5.x - p0.x;
@@ -3140,7 +4803,10 @@ function selectRightHandLandmarks(results) {
     for (let i = 0; i < hands.length; i++) {
       const hand = hands[i];
       const wrist = hand[0];
-      const dist = Math.hypot(wrist.x - lastTrackedWrist.x, wrist.y - lastTrackedWrist.y);
+      const dist = Math.hypot(
+        wrist.x - lastTrackedWrist.x,
+        wrist.y - lastTrackedWrist.y,
+      );
       if (dist < minDistance) {
         minDistance = dist;
         closestHand = hand;
@@ -3213,7 +4879,13 @@ function drawRawHandLandmarks(results) {
   const fingerConfig = FINGER_CONFIGS[currentFingerKey] || FINGER_CONFIGS.THUMB;
   const targetIndices = fingerConfig.indices;
   // 演奏判定および骨格描画に必要な関節インデックス（手首 0 ＋ 選択中指の全関節 [p1, p2, p3, tip]）
-  const activeJointIndices = [0, fingerConfig.p1Idx, fingerConfig.p2Idx, fingerConfig.p3Idx, fingerConfig.tipIdx];
+  const activeJointIndices = [
+    0,
+    fingerConfig.p1Idx,
+    fingerConfig.p2Idx,
+    fingerConfig.p3Idx,
+    fingerConfig.tipIdx,
+  ];
   const width = canvas.width;
   const height = canvas.height;
   const now = performance.now();
@@ -3254,8 +4926,11 @@ function drawRawHandLandmarks(results) {
   }
 
   if (isDebugPanelVisible) {
-    const totalDetected = results && results.landmarks ? results.landmarks.length : 0;
-    handsCount.textContent = hasHands ? `${totalDetected} (右手ロック)` : "1 (補間)";
+    const totalDetected =
+      results && results.landmarks ? results.landmarks.length : 0;
+    handsCount.textContent = hasHands
+      ? `${totalDetected} (右手ロック)`
+      : "1 (補間)";
   }
 
   // 画面外（完全未検出状態）からの再出現初フレームかどうかを判定
@@ -3274,14 +4949,23 @@ function drawRawHandLandmarks(results) {
     if (isReacquired) {
       for (let i = 0; i < 21; i++) {
         const raw = landmarks[i];
-        landmarkFilters[i].snap(raw.x * width, raw.y * height, now, smoothedLandmarksPool[i]);
+        landmarkFilters[i].snap(
+          raw.x * width,
+          raw.y * height,
+          now,
+          smoothedLandmarksPool[i],
+        );
       }
       lastFilteredFingerKey = currentFingerKey;
     } else {
       // 手の基準スケール（前フレーム手首と中指付け根の距離）を基に1フレームあたりの最大許容移動距離を算出
       const prevWrist = smoothedLandmarksPool[0];
       const prevMiddleMcp = smoothedLandmarksPool[9];
-      const handScalePx = Math.hypot(prevMiddleMcp.x - prevWrist.x, prevMiddleMcp.y - prevWrist.y) || (height * 0.2);
+      const handScalePx =
+        Math.hypot(
+          prevMiddleMcp.x - prevWrist.x,
+          prevMiddleMcp.y - prevWrist.y,
+        ) || height * 0.2;
       // 1フレーム（約16〜33ms）での物理的上限距離（手のひら長の35%、かつ最低25px）
       // 打鍵時や影によるAI検出の瞬間的な座標ワープ（マーカー飛び）を確実に抑制
       const maxAllowedJumpPx = Math.max(25, handScalePx * 0.35);
@@ -3304,7 +4988,12 @@ function drawRawHandLandmarks(results) {
           inputY = prevPt.y + dy * ratio;
         }
 
-        landmarkFilters[i].filter(inputX, inputY, now, smoothedLandmarksPool[i]);
+        landmarkFilters[i].filter(
+          inputX,
+          inputY,
+          now,
+          smoothedLandmarksPool[i],
+        );
       }
     }
     hasValidSmoothedLandmarks = true;
@@ -3320,11 +5009,14 @@ function drawRawHandLandmarks(results) {
     // 手首（0: Wrist）と中指付け根（9: Middle MCP）間の距離から手長基準スケールを算出
     const smoothWrist = smoothedLandmarks[0];
     const smoothMiddleMcp = smoothedLandmarks[9];
-    const baseDistPx = Math.hypot(smoothMiddleMcp.x - smoothWrist.x, smoothMiddleMcp.y - smoothWrist.y);
+    const baseDistPx = Math.hypot(
+      smoothMiddleMcp.x - smoothWrist.x,
+      smoothMiddleMcp.y - smoothWrist.y,
+    );
     const safeBaseDistPx = Math.max(baseDistPx, height * 0.05);
 
     const now = performance.now();
-    const isGlobalCooldown = (now - lastGlobalHitTime) < GLOBAL_HIT_COOLDOWN_MS;
+    const isGlobalCooldown = now - lastGlobalHitTime < GLOBAL_HIT_COOLDOWN_MS;
 
     const fingerMetrics = {};
     for (const fKey of FINGER_KEY_LIST) {
@@ -3333,7 +5025,7 @@ function drawRawHandLandmarks(results) {
       const smoothP2 = smoothedLandmarks[cfg.p2Idx];
       const smoothP3 = smoothedLandmarks[cfg.p3Idx];
       const smoothTip = smoothedLandmarks[cfg.tipIdx];
-      const smoothBase = (cfg.baseIdx === cfg.p1Idx) ? smoothP1 : smoothP2;
+      const smoothBase = cfg.baseIdx === cfg.p1Idx ? smoothP1 : smoothP2;
 
       const ry = (smoothTip.y - smoothBase.y) / safeBaseDistPx;
       const rawTipVy = landmarkFilters[cfg.tipIdx].getVelocityY();
@@ -3344,7 +5036,10 @@ function drawRawHandLandmarks(results) {
       const relVy = rawTipVy - rawBaseVy;
       const vy = relVy / safeBaseDistPx;
 
-      const thModel = fingerThresholdModels[fKey] || { hitRy: 0.50, liftRy: 0.42 };
+      const thModel = fingerThresholdModels[fKey] || {
+        hitRy: 0.5,
+        liftRy: 0.42,
+      };
       const vyTh = FINGER_VY_THRESHOLDS[fKey] || 1.4;
 
       fingerMetrics[fKey] = {
@@ -3358,7 +5053,7 @@ function drawRawHandLandmarks(results) {
         smoothP1,
         smoothP2,
         smoothP3,
-        smoothTip
+        smoothTip,
       };
     }
 
@@ -3391,7 +5086,7 @@ function drawRawHandLandmarks(results) {
           state,
           downVy,
           depth,
-          motion
+          motion,
         };
       });
 
@@ -3406,7 +5101,8 @@ function drawRawHandLandmarks(results) {
       // 2. タップとして十分な速度・深度に到達していること
       // 3. 2番目の指に対して動作量が2.0倍以上圧倒していること（手全体の沈み込みや連動時は比率が拮抗するため除外）
       const hasMinTapActivity = top1.vy >= top1.vyTh && top1.ry >= top1.hitRy;
-      const isDominantOverAll = !top2 || top2.motion < 0.005 || (top1.motion >= top2.motion * 2.0);
+      const isDominantOverAll =
+        !top2 || top2.motion < 0.005 || top1.motion >= top2.motion * 2.0;
 
       if (top1.state === "IDLE" && hasMinTapActivity && isDominantOverAll) {
         lastGlobalHitTime = now;
@@ -3438,16 +5134,26 @@ function drawRawHandLandmarks(results) {
 
         currentTip.x = top1.smoothTip.x;
         currentTip.y = top1.smoothTip.y;
-        updateDebugMetrics(top1.smoothTip.x, top1.smoothTip.y, top1.ry, top1.vy);
+        updateDebugMetrics(
+          top1.smoothTip.x,
+          top1.smoothTip.y,
+          top1.ry,
+          top1.vy,
+        );
 
         console.log(
-          `[MAX MOTION HIT] ${top1.cfg.label}: motion=${top1.motion.toFixed(3)} (2nd: ${top2 ? `${top2.cfg.shortName}=${top2.motion.toFixed(3)}` : "none"})`
+          `[MAX MOTION HIT] ${top1.cfg.label}: motion=${top1.motion.toFixed(3)} (2nd: ${top2 ? `${top2.cfg.shortName}=${top2.motion.toFixed(3)}` : "none"})`,
         );
       } else {
         const defM = fingerMetrics[currentFingerKey] || fingerMetrics.MIDDLE;
         currentTip.x = defM.smoothTip.x;
         currentTip.y = defM.smoothTip.y;
-        updateDebugMetrics(defM.smoothTip.x, defM.smoothTip.y, defM.ry, defM.vy);
+        updateDebugMetrics(
+          defM.smoothTip.x,
+          defM.smoothTip.y,
+          defM.ry,
+          defM.vy,
+        );
       }
     }
 
@@ -3530,12 +5236,16 @@ function drawRawHandLandmarks(results) {
   // ※生のlandmarksやジッターの大きいz深度を完全撤去し、平滑化済み2D座標のみを用いて算出
   const smoothWrist = smoothedLandmarks[0];
   const smoothBaseLm = smoothedLandmarks[fingerConfig.baseIdx];
-  const baseDistPx = Math.hypot(smoothBaseLm.x - smoothWrist.x, smoothBaseLm.y - smoothWrist.y);
+  const baseDistPx = Math.hypot(
+    smoothBaseLm.x - smoothWrist.x,
+    smoothBaseLm.y - smoothWrist.y,
+  );
   // 画面高の5%を下回らないよう安全最小値を設定して分母微小化スパイクを防止
   const safeBaseDistPx = Math.max(baseDistPx, height * 0.05);
 
   // 対象指の基準点ピクセル座標（smoothP2 または smoothP1）
-  const smoothBase = (fingerConfig.baseIdx === fingerConfig.p1Idx) ? smoothP1 : smoothP2;
+  const smoothBase =
+    fingerConfig.baseIdx === fingerConfig.p1Idx ? smoothP1 : smoothP2;
 
   // 完全平滑化・2Dピクセル比に基づく安定した相対変位 ry
   const currentRy = (smoothTip.y - smoothBase.y) / safeBaseDistPx;
@@ -3549,7 +5259,7 @@ function drawRawHandLandmarks(results) {
   const rawTipVy = tipFilter ? tipFilter.getVelocityY() : 0;
   const tipVy = rawTipVy / safeBaseDistPx;
   const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 2.0;
-  const isStepCooldown = (now - lastGlobalHitTime) < STEP_HIT_COOLDOWN_MS;
+  const isStepCooldown = now - lastGlobalHitTime < STEP_HIT_COOLDOWN_MS;
 
   // 3. レベル2打鍵認識（正規化変位 ＋ 正規化下降速度ゲートにより机面静止待機誤爆を完全遮断）
   // カウントダウン中、クリア演出中、復帰初フレーム、発音後800ms間は打鍵認識を無効化
@@ -3584,7 +5294,12 @@ function drawRawHandLandmarks(results) {
       if (currentTarget.fingerKey) {
         playVoiceSound(currentTarget.fingerKey, MELODY_VELOCITY, true);
       } else {
-        playTapSound(currentTarget.rightNote || currentTarget.freq, true, MELODY_VELOCITY, "melody");
+        playTapSound(
+          currentTarget.rightNote || currentTarget.freq,
+          true,
+          MELODY_VELOCITY,
+          "melody",
+        );
       }
 
       // 画面上部ピアノ鍵盤の打鍵フラッシュ（白黒反転フィードバック：右手メロディおよび低音伴奏）
@@ -3601,14 +5316,16 @@ function drawRawHandLandmarks(results) {
       updateVowelDisplay(currentTarget.note || "あ");
 
       console.log(
-        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, normVy=${tipVy.toFixed(2)} >= V_TH:${hitVyThreshold.toFixed(1)}${currentTarget.autoChord ? ` [自動伴奏: ${currentTarget.autoChord.join("+")}]` : currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`
+        `[SONG HIT] [${SONGS[currentSongId]?.title || ""}] Step ${currentTarget.step}/${currentSequence.length} [右手打鍵] 運指:${currentTarget.fingerNum} (${currentTarget.note}) 色:${targetColor.name} ry=${currentRy.toFixed(3)} >= TH:${hitRyThreshold.toFixed(2)}, normVy=${tipVy.toFixed(2)} >= V_TH:${hitVyThreshold.toFixed(1)}${currentTarget.autoChord ? ` [自動伴奏: ${currentTarget.autoChord.join("+")}]` : currentTarget.autoLeftNote ? ` [自動伴奏: ${currentTarget.autoLeftNote}]` : ""}`,
       );
 
       const isLastStep = currentSongStep === currentSequence.length - 1;
 
       if (isLastStep) {
         // 完走時：白黒ミニマルクリア通知（約1.5秒間）を表示後、インデックス0（第1音）へ自動ループ復帰
-        console.log(`[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`);
+        console.log(
+          `[SONG COMPLETE] 全${currentSequence.length}音を完走！クリア通知を表示します`,
+        );
         showClearNotification(() => {
           currentSongStep = 0;
           resetAccompaniment();
@@ -3618,7 +5335,9 @@ function drawRawHandLandmarks(results) {
           const resetTarget = currentSequence[0];
           setTargetFinger(resetTarget.fingerKey);
           renderSongGuideUI();
-          console.log(`[SONG LOOP] 第1音 (${resetTarget.note} / ${resetTarget.fingerKey}) へリセット完了`);
+          console.log(
+            `[SONG LOOP] 第1音 (${resetTarget.note} / ${resetTarget.fingerKey}) へリセット完了`,
+          );
         });
       } else {
         // 通常進行：次の音符へステップ進行
@@ -3635,7 +5354,7 @@ function drawRawHandLandmarks(results) {
     // 1. 変位がリフト閾値を下回った場合（通常の位置復帰）
     // 2. または、指先が上向きにリバウンド反転（正規化速度 tipVy <= -1.0 /s）し、かつ打鍵変位からわずかに抜けた場合（早期リフト復帰）
     const isLiftByPosition = currentRy <= liftRyThreshold;
-    const isLiftByRebound = tipVy <= -1.0 && currentRy <= (hitRyThreshold - 0.02);
+    const isLiftByRebound = tipVy <= -1.0 && currentRy <= hitRyThreshold - 0.02;
 
     if (isLiftByPosition || isLiftByRebound) {
       tapState = "IDLE";
@@ -3783,10 +5502,20 @@ function updateDebugMetrics(x, y, ry, vy = 0) {
   tipXVal.textContent = `${x.toFixed(1)}px`;
   tipYVal.textContent = `${y.toFixed(1)}px`;
   if (relYVal) {
-    relYVal.textContent = ry !== undefined && ry !== null ? (ry >= 0 ? `+${ry.toFixed(2)}` : ry.toFixed(2)) : "-";
+    relYVal.textContent =
+      ry !== undefined && ry !== null
+        ? ry >= 0
+          ? `+${ry.toFixed(2)}`
+          : ry.toFixed(2)
+        : "-";
   }
   if (velYVal) {
-    velYVal.textContent = vy !== undefined && vy !== null ? (vy >= 0 ? `+${vy.toFixed(1)}` : vy.toFixed(1)) : "-";
+    velYVal.textContent =
+      vy !== undefined && vy !== null
+        ? vy >= 0
+          ? `+${vy.toFixed(1)}`
+          : vy.toFixed(1)
+        : "-";
   }
 }
 
@@ -3934,11 +5663,17 @@ if (cameraErrorCloseBtn) {
  * @returns {{ isInApp: boolean, isLine: boolean, appName: string }}
  */
 function detectInAppBrowser() {
-  const ua = (navigator.userAgent || navigator.vendor || window.opera || "").toLowerCase();
+  const ua = (
+    navigator.userAgent ||
+    navigator.vendor ||
+    window.opera ||
+    ""
+  ).toLowerCase();
   const isLine = ua.includes("line/");
   const isTwitter = ua.includes("twitter") || ua.includes("tweetie");
   const isInstagram = ua.includes("instagram");
-  const isFacebook = ua.includes("fb_iab") || ua.includes("fb4a") || ua.includes("fbios");
+  const isFacebook =
+    ua.includes("fb_iab") || ua.includes("fb4a") || ua.includes("fbios");
   const isTikTok = ua.includes("musical_ly") || ua.includes("bytelocale");
 
   let appName = "";
@@ -3951,7 +5686,7 @@ function detectInAppBrowser() {
   return {
     isInApp: Boolean(appName),
     isLine,
-    appName: appName || "アプリ内ブラウザ"
+    appName: appName || "アプリ内ブラウザ",
   };
 }
 
@@ -4069,7 +5804,10 @@ if (document.readyState === "loading") {
 
 // ブラウザのAutoplay Policy対応（初回クリックまたはタップでAudioContextを確実にresume）
 ["pointerdown", "touchstart", "click", "keydown"].forEach((evt) => {
-  window.addEventListener(evt, ensureAudioContext, { once: false, passive: true });
+  window.addEventListener(evt, ensureAudioContext, {
+    once: false,
+    passive: true,
+  });
 });
 
 // TEST SOUNDボタン押下時の手動テスト発音
@@ -4125,18 +5863,26 @@ if (songSelectBtn && songSelectMenu) {
 
   // 画面外タップでメニューを閉じる
   document.addEventListener("click", (e) => {
-    if (!songSelectMenu.classList.contains("hidden") && !songSelectMenu.contains(e.target)) {
+    if (
+      !songSelectMenu.classList.contains("hidden") &&
+      !songSelectMenu.contains(e.target)
+    ) {
       songSelectMenu.classList.add("hidden");
     }
   });
 }
 
 // 画面右上のトラッキングライン表示切替ボタン
-const trackingLineToggleBtn = document.getElementById("tracking-line-toggle-btn");
+const trackingLineToggleBtn = document.getElementById(
+  "tracking-line-toggle-btn",
+);
 if (trackingLineToggleBtn) {
   const updateBtnUI = () => {
     trackingLineToggleBtn.classList.toggle("off", !showTrackingLines);
-    trackingLineToggleBtn.setAttribute("aria-pressed", showTrackingLines.toString());
+    trackingLineToggleBtn.setAttribute(
+      "aria-pressed",
+      showTrackingLines.toString(),
+    );
     trackingLineToggleBtn.title = showTrackingLines
       ? "トラッキングライン非表示に切替"
       : "トラッキングライン表示に切替";
@@ -4148,7 +5894,10 @@ if (trackingLineToggleBtn) {
     ensureAudioContext();
     showTrackingLines = !showTrackingLines;
     try {
-      localStorage.setItem(TRACKING_LINES_STORAGE_KEY, showTrackingLines.toString());
+      localStorage.setItem(
+        TRACKING_LINES_STORAGE_KEY,
+        showTrackingLines.toString(),
+      );
     } catch {
       // localStorage制限環境用フォールバック
     }
@@ -4199,21 +5948,33 @@ renderSongGuideUI();
 
 // 1. ピンチズーム・ジェスチャー操作の抑止（iPadでの演奏中の誤操作による画面拡大を防止）
 ["gesturestart", "gesturechange", "gestureend"].forEach((type) => {
-  document.addEventListener(type, (e) => {
-    e.preventDefault();
-  }, { passive: false });
+  document.addEventListener(
+    type,
+    (e) => {
+      e.preventDefault();
+    },
+    { passive: false },
+  );
 });
 
 // 2. バックグラウンドからの復帰時（タブ切り替え・画面ロック解除・pageshow）の安定化
 // AudioContextのサスペンド復帰およびScreen Wake Lockの再要求
 async function handleResumeAudioAndWakeLock() {
   try {
-    if (Tone && Tone.context && (Tone.context.state === "suspended" || Tone.context.state === "interrupted")) {
+    if (
+      Tone &&
+      Tone.context &&
+      (Tone.context.state === "suspended" ||
+        Tone.context.state === "interrupted")
+    ) {
       await Tone.context.resume();
       console.log("[AUDIO] 復帰ハンドラ: Tone.context を再開しました");
     }
     const rawCtx = Tone.getContext().rawContext;
-    if (rawCtx && (rawCtx.state === "suspended" || rawCtx.state === "interrupted")) {
+    if (
+      rawCtx &&
+      (rawCtx.state === "suspended" || rawCtx.state === "interrupted")
+    ) {
       await rawCtx.resume();
       console.log("[AUDIO] 復帰ハンドラ: raw AudioContext を再開しました");
     }
@@ -4326,8 +6087,8 @@ window.addEventListener("orientationchange", () => {
   setTimeout(updateRotateGuideOverlay, 80);
 });
 if (window.screen?.orientation?.addEventListener) {
-  window.screen.orientation.addEventListener("change", updateRotateGuideOverlay);
+  window.screen.orientation.addEventListener(
+    "change",
+    updateRotateGuideOverlay,
+  );
 }
-
-
-
