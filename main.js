@@ -1463,11 +1463,11 @@ export const FINGER_VY_THRESHOLDS = {
 // 指ごとの学習閾値モデル
 // 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
 export const fingerThresholdModels = {
-  THUMB: { hitRy: 0.35, liftRy: 0.28, samples: 0 },
-  INDEX: { hitRy: 0.50, liftRy: 0.42, samples: 0 },
-  MIDDLE: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
-  RING: { hitRy: 0.55, liftRy: 0.46, samples: 0 },
-  PINKY: { hitRy: 0.45, liftRy: 0.38, samples: 0 }
+  THUMB: { hitRy: 0.35, liftRy: 0.32, samples: 0 },
+  INDEX: { hitRy: 0.50, liftRy: 0.46, samples: 0 },
+  MIDDLE: { hitRy: 0.55, liftRy: 0.51, samples: 0 },
+  RING: { hitRy: 0.55, liftRy: 0.51, samples: 0 },
+  PINKY: { hitRy: 0.45, liftRy: 0.41, samples: 0 }
 };
 
 // 5本指それぞれの独立打鍵ステート（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
