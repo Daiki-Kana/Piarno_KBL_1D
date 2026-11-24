@@ -4113,8 +4113,10 @@ if (audioStartBanner) {
 // 画面上部：88鍵フルサイズ・白黒ミニマルピアノ鍵盤の動的生成と初期化
 init88KeyPianoKeyboard();
 
-// 初期ターゲット指（よろこびのうた 第1音: 中指 3 ミ）の設定と楽曲ガイドUIの描画
-setTargetFinger(currentSequence[0].fingerKey);
+// 初期ターゲット指の設定と楽曲ガイドUIの描画（フリーセッション時はシーケンス空のためスキップ）
+if (currentSequence && currentSequence.length > 0) {
+  setTargetFinger(currentSequence[0].fingerKey);
+}
 renderSongGuideUI();
 
 // ==========================================================================
@@ -4234,7 +4236,11 @@ function updateRotateGuideOverlay() {
 
 updateRotateGuideOverlay();
 window.addEventListener("resize", updateRotateGuideOverlay);
-window.addEventListener("orientationchange", updateRotateGuideOverlay);
+window.addEventListener("orientationchange", () => {
+  updateRotateGuideOverlay();
+  // iOS Safari等でorientationchange直後にinnerWidth/Heightが未更新な場合への対策
+  setTimeout(updateRotateGuideOverlay, 80);
+});
 if (window.screen?.orientation?.addEventListener) {
   window.screen.orientation.addEventListener("change", updateRotateGuideOverlay);
 }
