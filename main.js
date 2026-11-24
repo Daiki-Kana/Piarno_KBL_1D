@@ -64,6 +64,9 @@ let spokenWordBuffer = "";
  */
 export function updateVowelDisplay(text) {
   if (!text) return;
+  if (spokenWordBuffer.length >= 5) {
+    spokenWordBuffer = "";
+  }
   spokenWordBuffer += text;
   if (vowelDisplayText) {
     vowelDisplayText.textContent = spokenWordBuffer;
