@@ -4367,9 +4367,9 @@ async function initHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 2,
-        minHandDetectionConfidence: 0.25,
-        minHandPresenceConfidence: 0.25,
-        minTrackingConfidence: 0.2,
+        minHandDetectionConfidence: 0.4,
+        minHandPresenceConfidence: 0.4,
+        minTrackingConfidence: 0.3,
       });
       loaded = true;
       break;
@@ -4383,9 +4383,9 @@ async function initHandLandmarker() {
           },
           runningMode: "VIDEO",
           numHands: 2,
-          minHandDetectionConfidence: 0.25,
-          minHandPresenceConfidence: 0.25,
-          minTrackingConfidence: 0.2,
+          minHandDetectionConfidence: 0.4,
+          minHandPresenceConfidence: 0.4,
+          minTrackingConfidence: 0.3,
         });
         loaded = true;
         break;
@@ -4473,23 +4473,23 @@ async function startFrontCamera() {
   // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
   // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
   const tryConstraints = [
-    // 1. 720p (960x720, 4:3) 60fps志向（指先の検出解像度を最優先）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 },
-      },
-      audio: false,
-    },
-    // 2. 480p (640x480, 4:3) 60fps志向（フォールバック）
+    // 1. 480p (640x480, 4:3) 60fps志向（標準カメラ比率・最高レスポンス・低負荷）
     {
       video: {
         facingMode: "user",
         width: { ideal: 640 },
         height: { ideal: 480 },
+        aspectRatio: { ideal: 4 / 3 },
+        frameRate: { ideal: 60 },
+      },
+      audio: false,
+    },
+    // 2. 720p (960x720, 4:3) 60fps志向
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 960 },
+        height: { ideal: 720 },
         aspectRatio: { ideal: 4 / 3 },
         frameRate: { ideal: 60 },
       },
@@ -4746,15 +4746,16 @@ function schedulePredictLoop() {
   }
 }
 
-// 追従時の最大許容移動距離（正規化座標系：画面幅の35%）
-const MAX_WRIST_TRACK_DISTANCE = 0.35;
+// 追従時の最大許容移動距離（正規化座標系：画面幅の25%）
+// 1フレーム（約16ms）で右手手首がこれ以上離れることは物理的にあり得ないため、左手への飛び移りを完全遮断
+const MAX_WRIST_TRACK_DISTANCE = 0.25;
 
 // ナックル外積の明確な判定閾値（ゼロ近傍の不感帯用）
 const CROSS_RIGHT_THRESHOLD = -0.002;
 const CROSS_LEFT_THRESHOLD = 0.002;
 
-// 画面左端のセーフティ境界（画面端でも途切れないよう0.0に設定）
-const MIN_SAFETY_X = 0.0;
+// 画面左端のセーフティ境界（生カメラ画像で x < 0.02 等の極端な欠損フレームのみ除外）
+const MIN_SAFETY_X = 0.02;
 
 /**
  * 手のひらナックルの幾何学的向き（2Dベクトル外積）による右手判定（ヒステリシス対応）
@@ -4842,9 +4843,9 @@ function selectRightHandLandmarks(results) {
       return null;
     }
 
-    // 複数手が映っている場合のみナックル幾何判定で左手誤乗り換えを防止
-    // 1本しか検出されていない場合は、角度による誤除外を防ぐためそのまま追従を維持
-    if (hands.length > 1 && !isAnatomicallyRightHand(closestHand, true)) {
+    // 最も近い手が右手であるかナックル幾何判定（追従中ヒステリシス有効）
+    // （前回の右手位置の至近にある手であっても、明確に左手形状をしている場合は除外）
+    if (!isAnatomicallyRightHand(closestHand, true)) {
       return null;
     }
 
@@ -4859,12 +4860,7 @@ function selectRightHandLandmarks(results) {
   // ========================================================
   // 2. 未追従状態（初回出現時または完全ロスト後の初回復帰時）：
   // ========================================================
-  // 検出された手が1本だけの場合は角度による誤除外を防ぎそのまま採用
-  if (hands.length === 1) {
-    return hands[0][0].x >= MIN_SAFETY_X ? hands[0] : null;
-  }
-
-  // 複数手がある場合のみナックル外積により物理的な右手候補を抽出
+  // ナックル外積により物理的な右手と判定される候補のみを抽出（左手はここで100%除外）
   const rightCandidates = hands.filter((hand) => {
     if (!isAnatomicallyRightHand(hand, false)) return false;
     if (hand[0].x < MIN_SAFETY_X) return false;
@@ -5402,17 +5398,7 @@ function drawRawHandLandmarks(results) {
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy, tipVy);
 
   // 5. 指定された指の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
-  // 描画遅延をゼロにするため、検出できたフレームでは生ランドマーク座標を直接描画する
   if (showTrackingLines) {
-    const getDrawPt = (idx, fallbackPt) => {
-      const lm = hasHands && landmarks && landmarks[idx];
-      return lm ? { x: lm.x * width, y: lm.y * height } : fallbackPt;
-    };
-    const drawP1 = getDrawPt(fingerConfig.p1Idx, smoothP1);
-    const drawP2 = getDrawPt(fingerConfig.p2Idx, smoothP2);
-    const drawP3 = getDrawPt(fingerConfig.p3Idx, smoothP3);
-    const drawTip = getDrawPt(fingerConfig.tipIdx, smoothTip);
-
     canvasCtx.save();
     canvasCtx.lineCap = "round";
     canvasCtx.lineJoin = "round";
@@ -5420,10 +5406,10 @@ function drawRawHandLandmarks(results) {
     // 共通骨格パス生成
     const drawBonePath = () => {
       canvasCtx.beginPath();
-      canvasCtx.moveTo(drawP1.x, drawP1.y);
-      canvasCtx.lineTo(drawP2.x, drawP2.y);
-      canvasCtx.lineTo(drawP3.x, drawP3.y);
-      canvasCtx.lineTo(drawTip.x, drawTip.y);
+      canvasCtx.moveTo(smoothP1.x, smoothP1.y);
+      canvasCtx.lineTo(smoothP2.x, smoothP2.y);
+      canvasCtx.lineTo(smoothP3.x, smoothP3.y);
+      canvasCtx.lineTo(smoothTip.x, smoothTip.y);
     };
 
     // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
@@ -5445,7 +5431,7 @@ function drawRawHandLandmarks(results) {
     canvasCtx.stroke();
 
     // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
-    [drawP1, drawP2, drawP3].forEach((pt) => {
+    [smoothP1, smoothP2, smoothP3].forEach((pt) => {
       // 層1: 外側ハロー
       canvasCtx.beginPath();
       canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
@@ -5466,7 +5452,7 @@ function drawRawHandLandmarks(results) {
     });
 
     // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
-    drawTipTargetMark(drawTip.x, drawTip.y, targetColor);
+    drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
     canvasCtx.restore();
   }
 }
