@@ -4365,8 +4365,8 @@ async function initHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 2,
-        minHandDetectionConfidence: 0.4,
-        minHandPresenceConfidence: 0.4,
+        minHandDetectionConfidence: 0.35,
+        minHandPresenceConfidence: 0.35,
         minTrackingConfidence: 0.3,
       });
       loaded = true;
@@ -4381,8 +4381,8 @@ async function initHandLandmarker() {
           },
           runningMode: "VIDEO",
           numHands: 2,
-          minHandDetectionConfidence: 0.4,
-          minHandPresenceConfidence: 0.4,
+          minHandDetectionConfidence: 0.35,
+          minHandPresenceConfidence: 0.35,
           minTrackingConfidence: 0.3,
         });
         loaded = true;
@@ -4900,13 +4900,7 @@ function selectRightHandLandmarks(results) {
       return null;
     }
 
-    // 最も近い手が右手であるかナックル幾何判定（追従中ヒステリシス有効）
-    // （前回の右手位置の至近にある手であっても、明確に左手形状をしている場合は除外）
-    if (!isAnatomicallyRightHand(closestHand, true)) {
-      return null;
-    }
-
-    // 画面端スレスレの欠損セーフティ
+    // Piarno_PCと同様に、角度による右手/左手の誤判定で追従が切れないよう外積除外を行わず維持
     if (closestHand[0].x < MIN_SAFETY_X) {
       return null;
     }
@@ -4917,12 +4911,20 @@ function selectRightHandLandmarks(results) {
   // ========================================================
   // 2. 未追従状態（初回出現時または完全ロスト後の初回復帰時）：
   // ========================================================
-  // ナックル外積により物理的な右手と判定される候補のみを抽出（左手はここで100%除外）
-  const rightCandidates = hands.filter((hand) => {
-    if (!isAnatomicallyRightHand(hand, false)) return false;
-    if (hand[0].x < MIN_SAFETY_X) return false;
-    return true;
-  });
+  const validCandidates = hands.filter((hand) => hand[0].x >= MIN_SAFETY_X);
+  if (validCandidates.length === 0) {
+    return null;
+  }
+  if (validCandidates.length === 1) {
+    return validCandidates[0];
+  }
+
+  // 複数手がある場合のみ右手候補を優先し、無ければ最も左側の手を採用
+  const rightPreferred = validCandidates.filter((hand) =>
+    isAnatomicallyRightHand(hand, false),
+  );
+  const rightCandidates =
+    rightPreferred.length > 0 ? rightPreferred : validCandidates;
 
   if (rightCandidates.length === 0) {
     return null;
