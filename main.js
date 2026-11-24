@@ -55,6 +55,8 @@ const targetTapProgress = document.getElementById("target-tap-progress");
 const songProgressBadge = document.getElementById("song-progress-badge");
 const vowelDisplayCard = document.getElementById("vowel-display-card");
 const vowelDisplayText = document.getElementById("vowel-display-text");
+const videoContainer = document.querySelector(".video-container");
+const handBoundsWarning = document.getElementById("hand-bounds-warning");
 
 let spokenWordBuffer = "";
 
@@ -4962,6 +4964,45 @@ function selectRightHandLandmarks(results) {
   return leftmostHand;
 }
 
+const HAND_BOUNDS_MARGIN = 0.015;
+let lastHandOutOfBounds = null;
+
+/**
+ * 手の全21関節点がカメラ画角内に収まっているかを判定する
+ * @param {Array<{x: number, y: number}>} landmarks
+ * @returns {boolean} 1点でも画角外または端ギリギリなら true
+ */
+function isHandOutOfBounds(landmarks) {
+  if (!landmarks || landmarks.length < 21) return true;
+  for (let i = 0; i < 21; i++) {
+    const pt = landmarks[i];
+    if (
+      pt.x < HAND_BOUNDS_MARGIN ||
+      pt.x > 1 - HAND_BOUNDS_MARGIN ||
+      pt.y < HAND_BOUNDS_MARGIN ||
+      pt.y > 1 - HAND_BOUNDS_MARGIN
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * PiPカメラ枠の赤色ハイライトと警告テキストの表示状態を切り替える
+ * @param {boolean} isOutOfBounds
+ */
+function updateHandBoundsFeedback(isOutOfBounds) {
+  if (lastHandOutOfBounds === isOutOfBounds) return;
+  lastHandOutOfBounds = isOutOfBounds;
+  if (videoContainer) {
+    videoContainer.classList.toggle("hand-out-of-bounds", isOutOfBounds);
+  }
+  if (handBoundsWarning) {
+    handBoundsWarning.classList.toggle("hidden", !isOutOfBounds);
+  }
+}
+
 /**
  * 手の全21ランドマークの適応平滑化描画、打鍵・リフト用特徴量の算出
  * 手首・手のひら・全指先を独立した 1 Euro Filter で常時平滑化し、ジッターと飛びを完全排除
@@ -5013,10 +5054,12 @@ function drawRawHandLandmarks(results) {
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       lastFilteredFingerKey = null; // ★完全ロスト時は平滑化対象指もリセット
       resetDebugMetrics();
+      updateHandBoundsFeedback(true);
       return;
     }
   } else {
     lostFrames = 0;
+    updateHandBoundsFeedback(isHandOutOfBounds(selectedRightHand));
   }
 
   if (isDebugPanelVisible) {
@@ -6081,7 +6124,6 @@ window.addEventListener("pageshow", () => {
 });
 
 // カメラ画面（PiP小窓 ⇄ 通常表示）のタップ切り替え
-const videoContainer = document.querySelector(".video-container");
 if (videoContainer) {
   videoContainer.addEventListener("click", (e) => {
     e.stopPropagation();

@@ -24,6 +24,10 @@
         <video id="webcam" playsinline autoplay muted></video>
         <canvas id="output-canvas"></canvas>
       </div>
+      <!-- 手が画角に収まっていないときの警告テキスト -->
+      <div id="hand-bounds-warning" class="hand-bounds-warning hidden" aria-live="polite">
+        手をカメラに収めてください
+      </div>
 
       <!-- 画面上部から手先へ落ちるノーツ描画オーバーレイCanvas -->
       <canvas id="notes-canvas" class="notes-canvas"></canvas>
