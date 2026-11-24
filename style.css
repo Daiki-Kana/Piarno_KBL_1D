@@ -41,11 +41,30 @@ html, body {
   overflow: hidden;
 }
 
-/* ビデオコンテナ：iPhone標準カメラアプリと同じ4:3比率（縦持ち時3:4）ファインダー配置 */
+/* ビデオコンテナ：デフォルトは左下PiP小窓、タップ(.expanded)で4:3通常画面に切替 */
 .video-container {
+  position: fixed;
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: min(30vw, 220px);
+  aspect-ratio: var(--video-aspect, 1.3333);
+  height: auto;
+  border-radius: 14px;
+  background-color: #0d0d0d;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.85);
+  z-index: 205;
+  cursor: pointer;
+  line-height: 0;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  transition: width 0.22s ease, border-radius 0.22s ease, box-shadow 0.22s ease;
+}
+
+/* 拡大表示時：従来の4:3比率中央フィット画面 */
+.video-container.expanded {
   position: relative;
-  display: block;
-  /* 画面（ビューポート）内に収まる最大サイズをアスペクト比に基づき自動計算（標準カメラ比率） */
+  left: auto;
+  bottom: auto;
   width: min(100vw, calc(100vh * var(--video-aspect, 1.3333)));
   height: min(100vh, calc(100vw / var(--video-aspect, 1.3333)));
   width: min(100dvw, calc(100dvh * var(--video-aspect, 1.3333)));
@@ -54,8 +73,10 @@ html, body {
   max-height: 100dvh;
   max-width: 100dvw;
   max-height: 100dvh;
-  line-height: 0; /* 下部の隙間を排除 */
-  overflow: hidden;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 1;
 }
 
 /* インカメラ映像：コンテナに合わせてアスペクト比完全同期、クロップ・歪みなし、鏡像反転 */

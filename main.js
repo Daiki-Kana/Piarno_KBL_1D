@@ -4255,6 +4255,16 @@ window.addEventListener("pageshow", () => {
   handleResumeAudioAndWakeLock();
 });
 
+// カメラ画面（PiP小窓 ⇄ 通常表示）のタップ切り替え
+const videoContainer = document.querySelector(".video-container");
+if (videoContainer) {
+  videoContainer.addEventListener("click", (e) => {
+    e.stopPropagation();
+    ensureAudioContext();
+    videoContainer.classList.toggle("expanded");
+  });
+}
+
 // ==========================================================================
 // スマホ横向き回転ガイド（インカメラが右側に配置される向きを矢印で案内）
 // ==========================================================================
