@@ -41,11 +41,11 @@ html, body {
   overflow: hidden;
 }
 
-/* ビデオコンテナ：デフォルトは左下PiP小窓、タップ(.expanded)で4:3通常画面に切替 */
+/* ビデオコンテナ：デフォルトは左下（言葉選択ボタンの上）PiP小窓、タップ(.expanded)で4:3通常画面に切替 */
 .video-container {
   position: fixed;
   left: calc(16px + env(safe-area-inset-left, 0px));
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   width: min(30vw, 220px);
   aspect-ratio: var(--video-aspect, 1.3333);
   height: auto;
@@ -506,12 +506,13 @@ html, body {
 }
 
 /* ==========================================================================
-   画面左上：言葉選択ボタン＆メニュー（高齢者向けに大きく・高コントラスト・ボーダーレス）
+   画面左下：言葉選択ボタン＆メニュー（高齢者向けに大きく・高コントラスト・ボーダーレス）
    ========================================================================== */
 .word-select-container {
   position: fixed;
-  top: calc(16px + env(safe-area-inset-top, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   left: calc(16px + env(safe-area-inset-left, 0px));
+  top: auto;
   z-index: 260;
   pointer-events: auto;
 }
@@ -553,7 +554,8 @@ html, body {
 
 .word-select-menu {
   position: absolute;
-  top: calc(100% + 10px);
+  bottom: calc(100% + 10px);
+  top: auto;
   left: 0;
   min-width: 210px;
   padding: 8px;

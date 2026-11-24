@@ -145,6 +145,15 @@ const VOICE_FILES = {
   u: `${audioBasePath}/audio/u.mp3?v=orig`,
   e: `${audioBasePath}/audio/e.mp3?v=orig`,
   o: `${audioBasePath}/audio/o.mp3?v=orig`,
+  ri: `${audioBasePath}/audio/ri.mp3?v=v1`,
+  ga: `${audioBasePath}/audio/ga.mp3?v=v1`,
+  to: `${audioBasePath}/audio/to.mp3?v=v1`,
+  ko: `${audioBasePath}/audio/ko.mp3?v=v1`,
+  n: `${audioBasePath}/audio/n.mp3?v=v1`,
+  ni: `${audioBasePath}/audio/ni.mp3?v=v1`,
+  chi: `${audioBasePath}/audio/chi.mp3?v=v1`,
+  ha: `${audioBasePath}/audio/ha.mp3?v=v1`,
+  ba: `${audioBasePath}/audio/ba.mp3?v=v1`,
 };
 
 export const FINGER_TO_VOICE = {
@@ -161,6 +170,15 @@ export const VOICE_KANA = {
   u: "う",
   e: "え",
   o: "お",
+  ri: "り",
+  ga: "が",
+  to: "と",
+  ko: "こ",
+  n: "ん",
+  ni: "に",
+  chi: "ち",
+  ha: "は",
+  ba: "ば",
 };
 
 /**
@@ -256,21 +274,30 @@ function speakFallback(text) {
   }
 }
 
-const VOWEL_NOTE_TO_VOICE = {
+const KANA_TO_VOICE = {
   あ: "a",
   い: "i",
   う: "u",
   え: "e",
   お: "o",
+  り: "ri",
+  が: "ga",
+  と: "to",
+  こ: "ko",
+  ん: "n",
+  に: "ni",
+  ち: "chi",
+  は: "ha",
+  ば: "ba",
 };
 
 /**
- * ステップの文字に応じた発声（あいうえおは既存音声バッファ、その他は日本語SpeechSynthesis）
+ * ステップの文字に応じた発声（全文字をWeb Audio APIバッファから即時再生）
  * @param {string} note 発音する文字
  * @param {number} velocity 音量
  */
 function playCharacterVoice(note, velocity = 1.0) {
-  const voiceKey = VOWEL_NOTE_TO_VOICE[note];
+  const voiceKey = KANA_TO_VOICE[note];
   if (voiceKey) {
     playVoiceSound(voiceKey, velocity, true);
     return;
