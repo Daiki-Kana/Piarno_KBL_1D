@@ -205,32 +205,16 @@ export function playVoiceSound(
   const voiceKey = FINGER_TO_VOICE[voiceKeyOrFinger] || voiceKeyOrFinger;
   const kana = VOICE_KANA[voiceKey] || "あ";
 
-  // 1. Web Audio API バッファによる即時再生（低遅延・同時打鍵対応＋温かみフィルター）
+  // 1. Web Audio API バッファによる即時再生（低遅延・同時打鍵対応）
   if (ctx && voiceBuffers[voiceKey]) {
     try {
       const source = ctx.createBufferSource();
       source.buffer = voiceBuffers[voiceKey];
-
-      // 人の声の温もり帯域（300Hz付近）をわずかに補い、高域の硬さを丸めるフィルター
-      const warmthFilter = ctx.createBiquadFilter();
-      warmthFilter.type = "peaking";
-      warmthFilter.frequency.setValueAtTime(320, ctx.currentTime);
-      warmthFilter.Q.setValueAtTime(0.9, ctx.currentTime);
-      warmthFilter.gain.setValueAtTime(2.0, ctx.currentTime);
-
-      const softHighFilter = ctx.createBiquadFilter();
-      softHighFilter.type = "lowpass";
-      softHighFilter.frequency.setValueAtTime(5200, ctx.currentTime);
-      softHighFilter.Q.setValueAtTime(0.7, ctx.currentTime);
-
       const gainNode = ctx.createGain();
-      // 高齢者にも聞き取りやすいよう、明瞭かつ優しい音圧に調整
+      // 高齢者にも聞き取りやすいよう、明瞭な音圧に調整
       const vol = Math.min(1.2, Math.max(0.3, velocity * 1.15));
       gainNode.gain.setValueAtTime(vol, ctx.currentTime);
-
-      source.connect(warmthFilter);
-      warmthFilter.connect(softHighFilter);
-      softHighFilter.connect(gainNode);
+      source.connect(gainNode);
       gainNode.connect(ctx.destination);
       source.start(0);
     } catch (e) {
