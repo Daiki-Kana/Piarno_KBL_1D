@@ -1393,9 +1393,9 @@ export function selectSong(songId, withCountdown = true) {
 }
 
 // 手の全21ランドマーク専用の適応平滑化フィルター（1 Euro Filter）
-// minCutoffを1.5Hzで静止時の精度・安定性を高めつつ、
-// betaを0.08に設定して素早いタップ動作には即座に追従
-const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(1.5, 0.08, 1.5));
+// minCutoffを2.2Hzに設定して静止時の小刻みなジッターを抑えつつ、
+// betaを0.05に引き上げて素早いタップ動作への追従遅延を大幅に低減
+const landmarkFilters = Array.from({ length: 21 }, () => new PointFilter(2.2, 0.05, 2.0));
 
 // 全21関節点用の平滑化座標オブジェクトプール（毎フレームの新規オブジェクト生成・破棄によるGCスパイクを完全排除）
 const smoothedLandmarksPool = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
@@ -2704,9 +2704,9 @@ async function initHandLandmarker() {
         },
         runningMode: "VIDEO",
         numHands: 1,
-        minHandDetectionConfidence: 0.55,
-        minHandPresenceConfidence: 0.55,
-        minTrackingConfidence: 0.5
+        minHandDetectionConfidence: 0.4,
+        minHandPresenceConfidence: 0.4,
+        minTrackingConfidence: 0.3
       });
       loaded = true;
       break;
@@ -2720,9 +2720,9 @@ async function initHandLandmarker() {
           },
           runningMode: "VIDEO",
           numHands: 1,
-          minHandDetectionConfidence: 0.55,
-          minHandPresenceConfidence: 0.55,
-          minTrackingConfidence: 0.5
+          minHandDetectionConfidence: 0.4,
+          minHandPresenceConfidence: 0.4,
+          minTrackingConfidence: 0.3
         });
         loaded = true;
         break;
@@ -2800,23 +2800,23 @@ async function startFrontCamera() {
   // iPhone標準カメラアプリ（写真モード）と同一の4:3比率を最優先
   // 上下視野を最大確保し、指先から手首までの動きをフル画角で捕捉
   const tryConstraints = [
-    // 1. 720p (960x720, 4:3) 60fps志向（指先ランドマークの高精度検出を最優先）
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 960 },
-        height: { ideal: 720 },
-        aspectRatio: { ideal: 4 / 3 },
-        frameRate: { ideal: 60 }
-      },
-      audio: false
-    },
-    // 2. 480p (640x480, 4:3) 60fps志向（フォールバック）
+    // 1. 480p (640x480, 4:3) 60fps志向（標準カメラ比率・最高レスポンス・低負荷）
     {
       video: {
         facingMode: "user",
         width: { ideal: 640 },
         height: { ideal: 480 },
+        aspectRatio: { ideal: 4 / 3 },
+        frameRate: { ideal: 60 }
+      },
+      audio: false
+    },
+    // 2. 720p (960x720, 4:3) 60fps志向
+    {
+      video: {
+        facingMode: "user",
+        width: { ideal: 960 },
+        height: { ideal: 720 },
         aspectRatio: { ideal: 4 / 3 },
         frameRate: { ideal: 60 }
       },
@@ -3535,13 +3535,11 @@ function drawRawHandLandmarks(results) {
   // 現在のターゲット音符とハイライト色（単発＝水色、連続＝黄色→緑色→青色）
   const targetColor = getTargetFingerColor(currentSongStep);
 
-  // 対象指先端の平滑化下降速度から付け根関節速度を差し引いた相対下降速度を算出（手首相殺）
-  // これにより手首全体の揺れを排除し、指自体の屈曲のみを精密に検知
+  // 対象指先端の平滑化下降速度（ピクセル/秒）を取得し、手の基準長（safeBaseDistPx）で正規化（基準長/秒）
+  // これによりカメラとの距離や手の大きさ、画面解像度に依存しないスケール不変な速度判定を実現
   const tipFilter = landmarkFilters[fingerConfig.tipIdx];
-  const baseFilter = landmarkFilters[fingerConfig.baseIdx];
   const rawTipVy = tipFilter ? tipFilter.getVelocityY() : 0;
-  const rawBaseVy = baseFilter ? baseFilter.getVelocityY() : 0;
-  const tipVy = (rawTipVy - rawBaseVy) / safeBaseDistPx;
+  const tipVy = rawTipVy / safeBaseDistPx;
   const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 2.0;
 
   // 1つの指が下がり始めたのを検知した際、別の指の検知を完全に無効化する排他ロック更新
