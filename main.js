@@ -1484,11 +1484,8 @@ let lastGlobalHitTime = 0;
 // 高齢者のリハビリ打鍵および連動指の遅延着地による多重発音を防止するため、不応期を240msに最適化
 const GLOBAL_HIT_COOLDOWN_MS = 240;
 
-// ステップモード用：発音後800msの打鍵無効化 ＆ 1本下降時の他指排他ロック
+// ステップモード用：発音後800msの打鍵無効化クールダウン
 const STEP_HIT_COOLDOWN_MS = 800;
-const DESCEND_START_VY_TH = 0.45; // 指が下がり始めたとみなす相対下降速度閾値
-const DESCEND_STOP_VY_TH = 0.15;  // 下降終了とみなす相対下降速度閾値
-let activeDescendingFinger = null;
 
 // 指ごとのデータセット格納用
 export const fingerDatasets = {
@@ -3242,7 +3239,6 @@ function drawRawHandLandmarks(results) {
       lastRawLandmarks = null;
       lastTrackedWrist = null; // ★完全ロスト時は右手トラッキング位置もリセット
       lastFilteredFingerKey = null; // ★完全ロスト時は平滑化対象指もリセット
-      activeDescendingFinger = null; // ★完全ロスト時は下降中ロックもリセット
       resetDebugMetrics();
       return;
     }
@@ -3546,55 +3542,21 @@ function drawRawHandLandmarks(results) {
   const rawTipVy = tipFilter ? tipFilter.getVelocityY() : 0;
   const tipVy = rawTipVy / safeBaseDistPx;
   const hitVyThreshold = FINGER_VY_THRESHOLDS[currentFingerKey] || 2.0;
-
-  // 1つの指が下がり始めたのを検知した際、別の指の検知を完全に無効化する排他ロック更新
-  const fingerRelVelocities = {};
-  for (const fKey of FINGER_KEY_LIST) {
-    const cfg = FINGER_CONFIGS[fKey];
-    const tVy = landmarkFilters[cfg.tipIdx]?.getVelocityY() || 0;
-    const bVy = landmarkFilters[cfg.baseIdx]?.getVelocityY() || 0;
-    fingerRelVelocities[fKey] = (tVy - bVy) / safeBaseDistPx;
-  }
-
-  if (activeDescendingFinger !== null) {
-    // ロック中の指の下降が止まったら排他ロックを解除
-    if ((fingerRelVelocities[activeDescendingFinger] ?? 0) <= DESCEND_STOP_VY_TH) {
-      activeDescendingFinger = null;
-    }
-  }
-  if (activeDescendingFinger === null) {
-    let maxFinger = null;
-    let maxRelVy = DESCEND_START_VY_TH;
-    for (const fKey of FINGER_KEY_LIST) {
-      if (fingerRelVelocities[fKey] >= maxRelVy) {
-        maxRelVy = fingerRelVelocities[fKey];
-        maxFinger = fKey;
-      }
-    }
-    if (maxFinger !== null) {
-      activeDescendingFinger = maxFinger;
-    }
-  }
-
   const isStepCooldown = (now - lastGlobalHitTime) < STEP_HIT_COOLDOWN_MS;
-  const isOtherFingerDescending =
-    activeDescendingFinger !== null && activeDescendingFinger !== currentFingerKey;
 
   // 3. レベル2打鍵認識（正規化変位 ＋ 正規化下降速度ゲートにより机面静止待機誤爆を完全遮断）
-  // カウントダウン中、クリア演出中、復帰初フレーム、発音後800ms間、他指の下降中は打鍵認識を無効化
+  // カウントダウン中、クリア演出中、復帰初フレーム、発音後800ms間は打鍵認識を無効化
   if (
     tapState === "IDLE" &&
     !isCountingDown &&
     !isClearing &&
     !isReacquired &&
-    !isStepCooldown &&
-    !isOtherFingerDescending
+    !isStepCooldown
   ) {
     // 平滑化変位が打鍵閾値以上 かつ 正規化下降速度が速度閾値以上（勢いよく振り下ろされた瞬間）
     if (currentRy >= hitRyThreshold && tipVy >= hitVyThreshold) {
       tapState = "TOUCHED";
       lastGlobalHitTime = now;
-      activeDescendingFinger = null;
 
       // 該当指先でノーツHIT弾けエフェクトを発火
       triggerNoteHitEffect(currentSongStep);
