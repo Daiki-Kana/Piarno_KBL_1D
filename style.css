@@ -407,7 +407,7 @@ html, body {
    右手運指ガイドウィジェット（文字カード下・中央寄りに限界サイズで配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-height: clamp(180px, calc(100dvh - 155px), 480px);
+  --hand-guide-height: clamp(120px, calc(100dvh - 178px), 480px);
   position: absolute;
   left: 50%;
   right: auto;
