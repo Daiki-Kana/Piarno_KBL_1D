@@ -4163,5 +4163,81 @@ window.addEventListener("pageshow", () => {
   handleResumeAudioAndWakeLock();
 });
 
+// ==========================================================================
+// スマホ横向き回転ガイド（インカメラが右側に配置される向きを矢印で案内）
+// ==========================================================================
+const rotateGuideOverlay = document.getElementById("rotate-guide-overlay");
+const rotateGuideSvgCw = document.getElementById("rotate-guide-svg-cw");
+const rotateGuideSvgFlip = document.getElementById("rotate-guide-svg-flip");
+
+/**
+ * モバイル端末（スマホ等のタッチ主体端末）かどうかを判定する
+ * @returns {boolean}
+ */
+function isMobileDevice() {
+  // Chrome/Edge等が提供する Client Hints が利用できる場合は最優先で信頼する
+  if (typeof navigator.userAgentData?.mobile === "boolean") {
+    return navigator.userAgentData.mobile;
+  }
+
+  // iPhone / Androidスマホ等の明確なモバイルUser-Agent
+  if (/iPhone|iPod|Android.*Mobile/i.test(navigator.userAgent)) {
+    return true;
+  }
+
+  // ホバー不可かつタッチ主体の環境のみモバイルとみなす（タッチ対応PCを除外）
+  const isTouchOnly =
+    window.matchMedia &&
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  return Boolean(isTouchOnly);
+}
+
+/**
+ * 現在の画面の向きから回転ガイドの表示状態と矢印パターン（90度時計回り / 180度反転）を更新する
+ */
+function updateRotateGuideOverlay() {
+  if (!rotateGuideOverlay) return;
+
+  // PCブラウザでは回転ガイドを表示しない
+  if (!isMobileDevice()) {
+    rotateGuideOverlay.classList.add("hidden");
+    return;
+  }
+
+  const isPortrait = window.innerHeight > window.innerWidth;
+  const orientationAngle =
+    typeof window.screen?.orientation?.angle === "number"
+      ? window.screen.orientation.angle
+      : typeof window.orientation === "number"
+        ? window.orientation
+        : null;
+
+  // カメラが左側に配置されている横向き（縦持ちから反時計回り90度: angle === 90）のみ検知
+  // ※ PCや横長端末の標準横画面（angle === 0）で誤表示されるのを防ぐ
+  const isLeftCameraLandscape = !isPortrait && orientationAngle === 90;
+
+  if (isPortrait) {
+    // 縦向き：時計回りに90度回転してカメラを右側に配置するよう案内
+    rotateGuideOverlay.classList.remove("hidden");
+    if (rotateGuideSvgCw) rotateGuideSvgCw.classList.remove("hidden");
+    if (rotateGuideSvgFlip) rotateGuideSvgFlip.classList.add("hidden");
+  } else if (isLeftCameraLandscape) {
+    // 逆向き横向き（カメラ左）：180度回転してカメラを右側に配置するよう案内
+    rotateGuideOverlay.classList.remove("hidden");
+    if (rotateGuideSvgCw) rotateGuideSvgCw.classList.add("hidden");
+    if (rotateGuideSvgFlip) rotateGuideSvgFlip.classList.remove("hidden");
+  } else {
+    // カメラが右側の横向き（landscape-secondary / angle 270 / -90 等）
+    rotateGuideOverlay.classList.add("hidden");
+  }
+}
+
+updateRotateGuideOverlay();
+window.addEventListener("resize", updateRotateGuideOverlay);
+window.addEventListener("orientationchange", updateRotateGuideOverlay);
+if (window.screen?.orientation?.addEventListener) {
+  window.screen.orientation.addEventListener("change", updateRotateGuideOverlay);
+}
+
 
 

@@ -239,6 +239,91 @@
         </div>
       </div>
 
+      <!-- 横向き回転ガイドオーバーレイ（カメラが右に来る向きへ矢印で誘導） -->
+      <div
+        id="rotate-guide-overlay"
+        class="rotate-guide-overlay hidden"
+        role="alert"
+        aria-live="polite"
+        aria-label="カメラが右側に来るように端末を横向きに回転してください"
+      >
+        <div class="rotate-guide-stage">
+          <!-- 縦向き→時計回りに横向き（カメラ右）のガイド図 -->
+          <svg
+            id="rotate-guide-svg-cw"
+            class="rotate-guide-svg"
+            viewBox="0 0 320 160"
+            aria-hidden="true"
+          >
+            <!-- 回転前の縦スマホ（カメラ上） -->
+            <g class="phone-before">
+              <rect x="28" y="34" width="52" height="92" rx="10" fill="#1c1c1c" />
+              <rect x="33" y="40" width="42" height="80" rx="6" fill="#0d0d0d" />
+              <!-- 上部カメラ位置 -->
+              <circle cx="54" cy="48" r="4" fill="#888888" />
+            </g>
+
+            <!-- 時計回り回転を示す曲線矢印 -->
+            <g class="rotate-arrow-cw">
+              <path
+                d="M 114 68 A 48 48 0 0 1 196 68"
+                fill="none"
+                stroke="#ffffff"
+                stroke-width="6"
+                stroke-linecap="round"
+              />
+              <polygon points="204,76 184,72 199,55" fill="#ffffff" />
+            </g>
+
+            <!-- 回転後の横スマホ（カメラ右） -->
+            <g class="phone-after">
+              <rect x="216" y="54" width="92" height="52" rx="10" fill="#2a2a2a" />
+              <rect x="222" y="59" width="80" height="42" rx="6" fill="#121212" />
+              <!-- 右側カメラ位置（白ドット＋パルスリングで強調） -->
+              <circle class="camera-dot-ring" cx="292" cy="80" r="8" fill="#ffffff" opacity="0.25" />
+              <circle cx="292" cy="80" r="4.5" fill="#ffffff" />
+            </g>
+          </svg>
+
+          <!-- 逆向き横向き（カメラ左）→180度回転（カメラ右）のガイド図 -->
+          <svg
+            id="rotate-guide-svg-flip"
+            class="rotate-guide-svg hidden"
+            viewBox="0 0 320 160"
+            aria-hidden="true"
+          >
+            <!-- カメラが左にある横スマホ -->
+            <g class="phone-before">
+              <rect x="12" y="54" width="92" height="52" rx="10" fill="#1c1c1c" />
+              <rect x="18" y="59" width="80" height="42" rx="6" fill="#0d0d0d" />
+              <!-- 左側カメラ位置 -->
+              <circle cx="28" cy="80" r="4.5" fill="#666666" />
+            </g>
+
+            <!-- 180度反転を示す時計回り矢印 -->
+            <g class="rotate-arrow-cw">
+              <path
+                d="M 122 66 A 42 42 0 0 1 198 66"
+                fill="none"
+                stroke="#ffffff"
+                stroke-width="6"
+                stroke-linecap="round"
+              />
+              <polygon points="205,74 185,70 200,53" fill="#ffffff" />
+            </g>
+
+            <!-- カメラが右にある横スマホ -->
+            <g class="phone-after">
+              <rect x="216" y="54" width="92" height="52" rx="10" fill="#2a2a2a" />
+              <rect x="222" y="59" width="80" height="42" rx="6" fill="#121212" />
+              <!-- 右側カメラ位置（白ドット＋強調リング） -->
+              <circle class="camera-dot-ring" cx="292" cy="80" r="8" fill="#ffffff" opacity="0.25" />
+              <circle cx="292" cy="80" r="4.5" fill="#ffffff" />
+            </g>
+          </svg>
+        </div>
+      </div>
+
 
       <!-- デバッグHUD（左下） -->
       <div id="debug-panel" class="debug-panel">

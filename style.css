@@ -1341,4 +1341,80 @@ html, body {
   word-break: break-word;
 }
 
+/* ==========================================================================
+   横向き回転ガイドオーバーレイ（カメラ右配置・ボーダーレス・アイコンファースト）
+   ========================================================================== */
+.rotate-guide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 24px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rotate-guide-overlay.hidden {
+  display: none;
+}
+
+.rotate-guide-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(88vw, 360px);
+  padding: 28px 20px;
+  border-radius: 20px;
+  background-color: #111111;
+}
+
+.rotate-guide-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.rotate-guide-svg.hidden {
+  display: none;
+}
+
+.rotate-arrow-cw {
+  transform-origin: 155px 80px;
+  animation: rotate-arrow-nudge 1.8s ease-in-out infinite;
+}
+
+.camera-dot-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: camera-dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes rotate-arrow-nudge {
+  0%, 100% {
+    opacity: 0.75;
+    transform: translateX(-3px) rotate(-6deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(3px) rotate(6deg);
+  }
+}
+
+@keyframes camera-dot-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.45;
+  }
+}
+
+
 
