@@ -91,6 +91,7 @@ export function resetVowelDisplay() {
     vowelDisplayText.textContent = "-";
   }
   if (vowelDisplayCard) {
+    vowelDisplayCard.classList.remove("is-complete");
     vowelDisplayCard.scrollLeft = 0;
   }
 }
@@ -1304,6 +1305,9 @@ export function showClearNotification(onComplete) {
   }
 
   isClearing = true;
+  if (vowelDisplayCard) {
+    vowelDisplayCard.classList.add("is-complete");
+  }
   overlay.classList.remove("hidden");
   // 強制リフローまたは微小ディレイでCSS opacity トランジションを確実に開始
   requestAnimationFrame(() => {
@@ -1312,11 +1316,14 @@ export function showClearNotification(onComplete) {
 
   if (clearTimerId) clearTimeout(clearTimerId);
 
-  // 約1.5秒間シンプルにフェード表示した後、フェードアウトしてループ復帰
+  // 約1.5秒間シンプルにチェック演出を表示した後、フェードアウトしてループ復帰
   clearTimerId = setTimeout(() => {
     overlay.classList.remove("show");
     setTimeout(() => {
       overlay.classList.add("hidden");
+      if (vowelDisplayCard) {
+        vowelDisplayCard.classList.remove("is-complete");
+      }
       isClearing = false;
       if (onComplete) onComplete();
     }, 300); // CSSのtransition 0.3s完了後にhidden化
