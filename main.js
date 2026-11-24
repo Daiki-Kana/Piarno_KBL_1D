@@ -78,6 +78,19 @@ export function updateVowelDisplay(text) {
     }, 180);
   }
 }
+
+/**
+ * 連結表示された文字バッファを初期状態（"-"）へリセットする
+ */
+export function resetVowelDisplay() {
+  spokenWordBuffer = "";
+  if (vowelDisplayText) {
+    vowelDisplayText.textContent = "-";
+  }
+  if (vowelDisplayCard) {
+    vowelDisplayCard.scrollLeft = 0;
+  }
+}
 const debugPanel = document.getElementById("debug-panel");
 
 // 画面最上部：3オクターブ ピアノ鍵盤（半透明・四角・HUD専用）
@@ -1334,6 +1347,7 @@ export function selectSong(songId, withCountdown = true) {
   currentSongStep = 0;
   resetAccompaniment();
   releaseAllNotes();
+  resetVowelDisplay();
   if (typeof noteProgressMap !== "undefined") {
     noteProgressMap.clear();
   }
@@ -3622,6 +3636,7 @@ function drawRawHandLandmarks(results) {
           currentSongStep = 0;
           resetAccompaniment();
           releaseAllNotes();
+          resetVowelDisplay();
           noteProgressMap.clear();
           const resetTarget = currentSequence[0];
           setTargetFinger(resetTarget.fingerKey);
