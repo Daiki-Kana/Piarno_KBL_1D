@@ -249,6 +249,7 @@ html, body {
    ノーツ描画オーバーレイCanvas（画面全体に重畳・クリック透過）
    ========================================================================== */
 .notes-canvas {
+  display: none !important;
   position: absolute;
   top: 0;
   left: 0;
@@ -403,17 +404,17 @@ html, body {
 }
 
 /* ==========================================================================
-   右手運指ガイドウィジェット（画面右下に半透明・中サイズで固定配置）
+   右手運指ガイドウィジェット（文字に重ならない限界サイズで右下に配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-size: 200px;
+  --hand-guide-size: clamp(200px, min(calc(100dvh - 155px), calc(100vw - min(30vw, 220px) - 36px)), 440px);
   position: absolute;
   right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(-10px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(4px + env(safe-area-inset-bottom, 0px));
   top: auto;
   left: auto;
-  width: var(--hand-guide-size, 200px);
-  height: var(--hand-guide-size, 200px);
+  width: var(--hand-guide-size, 260px);
+  height: var(--hand-guide-size, 260px);
   background: transparent;
   border: none;
   box-shadow: none;
@@ -425,7 +426,7 @@ html, body {
   outline: none;
   pointer-events: none;
   z-index: 210;
-  opacity: 0.80;
+  opacity: 1;
   transition: opacity 0.2s ease, transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1), filter 0.15s ease;
 }
 

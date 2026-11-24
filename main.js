@@ -2027,6 +2027,11 @@ window.addEventListener("resize", resizeNotesCanvas);
  * 毎フレームのノーツ描画とアニメーション更新（画面上部から指先への落下）
  */
 function updateAndRenderNotes() {
+  // ノーツは非表示仕様のため、毎フレームのCanvas描画・リサイズ処理をスキップ
+  return;
+}
+
+function _unusedUpdateAndRenderNotes() {
   if (!notesCanvas || !notesCtx) return;
   resizeNotesCanvas();
 
@@ -4189,7 +4194,7 @@ if (handGuideWidget) {
   handGuideWidget.style.top = "";
   handGuideWidget.style.right = "";
   handGuideWidget.style.bottom = "";
-  handGuideWidget.style.setProperty("--hand-guide-size", "200px");
+  handGuideWidget.style.removeProperty("--hand-guide-size");
 }
 
 // 初回オーディオ開始バナーのクリックイベント
