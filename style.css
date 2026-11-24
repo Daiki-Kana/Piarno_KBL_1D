@@ -41,11 +41,11 @@ html, body {
   overflow: hidden;
 }
 
-/* ビデオコンテナ：デフォルトは左下（言葉選択ボタンの上）PiP小窓、タップ(.expanded)で4:3通常画面に切替 */
+/* ビデオコンテナ：デフォルトは限界まで左下PiP小窓、タップ(.expanded)で4:3通常画面に切替 */
 .video-container {
   position: fixed;
-  left: calc(16px + env(safe-area-inset-left, 0px));
-  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  left: calc(8px + env(safe-area-inset-left, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   width: min(30vw, 220px);
   aspect-ratio: var(--video-aspect, 1.3333);
   height: auto;
@@ -407,7 +407,7 @@ html, body {
    右手運指ガイドウィジェット（文字カード下・中央寄りに限界サイズで配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-height: clamp(120px, calc(100dvh - 178px), 480px);
+  --hand-guide-height: clamp(120px, calc(100dvh - 140px), 520px);
   position: absolute;
   left: 50%;
   right: auto;
@@ -416,7 +416,7 @@ html, body {
   transform: translateX(-50%);
   height: var(--hand-guide-height);
   width: auto;
-  aspect-ratio: 134 / 156;
+  aspect-ratio: 134 / 153;
   max-width: calc(100vw - 32px);
   background: transparent;
   border: none;
@@ -506,12 +506,13 @@ html, body {
 }
 
 /* ==========================================================================
-   画面左下：言葉選択ボタン＆メニュー（高齢者向けに大きく・高コントラスト・ボーダーレス）
+   画面右下：言葉選択ボタン＆メニュー（高齢者向けに大きく・高コントラスト・ボーダーレス）
    ========================================================================== */
 .word-select-container {
   position: fixed;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  left: calc(16px + env(safe-area-inset-left, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  left: auto;
   top: auto;
   z-index: 260;
   pointer-events: auto;
@@ -556,7 +557,8 @@ html, body {
   position: absolute;
   bottom: calc(100% + 10px);
   top: auto;
-  left: 0;
+  right: 0;
+  left: auto;
   min-width: 210px;
   padding: 8px;
   border: none;
