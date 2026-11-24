@@ -1453,21 +1453,21 @@ export function updateCachedConnections(fingerKey) {
 // 手の大きさやカメラとの距離（拡大・縮小）に依存しないスケール不変な速度判定
 // 手首相殺（相対速度）導入に伴い、軽いタッチでも検知できるよう最適化
 export const FINGER_VY_THRESHOLDS = {
-  THUMB: 1.2,
-  INDEX: 1.4,
-  MIDDLE: 1.4,
-  RING: 1.3,
-  PINKY: 1.3
+  THUMB: 0.45,
+  INDEX: 0.55,
+  MIDDLE: 0.55,
+  RING: 0.50,
+  PINKY: 0.50
 };
 
 // 指ごとの学習閾値モデル
-// 速度ゲート（下降速度 vy）を併用するため、静止待機誤爆を心配せず変位閾値を浅く緩和して軽いタッチを確実に検知
+// 手首相殺と連動しているため、ゆっくり・浅めの動きでも反応するよう閾値を緩和
 export const fingerThresholdModels = {
-  THUMB: { hitRy: 0.35, liftRy: 0.32, samples: 0 },
-  INDEX: { hitRy: 0.50, liftRy: 0.46, samples: 0 },
-  MIDDLE: { hitRy: 0.55, liftRy: 0.51, samples: 0 },
-  RING: { hitRy: 0.55, liftRy: 0.51, samples: 0 },
-  PINKY: { hitRy: 0.45, liftRy: 0.41, samples: 0 }
+  THUMB: { hitRy: 0.30, liftRy: 0.27, samples: 0 },
+  INDEX: { hitRy: 0.44, liftRy: 0.40, samples: 0 },
+  MIDDLE: { hitRy: 0.48, liftRy: 0.44, samples: 0 },
+  RING: { hitRy: 0.48, liftRy: 0.44, samples: 0 },
+  PINKY: { hitRy: 0.40, liftRy: 0.36, samples: 0 }
 };
 
 // 5本指それぞれの独立打鍵ステート（IDLE: 待機, TOUCHED: 机面接触中・リフト待ち）
