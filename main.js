@@ -2708,7 +2708,7 @@ async function initHandLandmarker() {
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        numHands: 2,
+        numHands: 1,
         minHandDetectionConfidence: 0.4,
         minHandPresenceConfidence: 0.4,
         minTrackingConfidence: 0.3
@@ -2724,7 +2724,7 @@ async function initHandLandmarker() {
             delegate: "CPU"
           },
           runningMode: "VIDEO",
-          numHands: 2,
+          numHands: 1,
           minHandDetectionConfidence: 0.4,
           minHandPresenceConfidence: 0.4,
           minTrackingConfidence: 0.3
@@ -3679,7 +3679,17 @@ function drawRawHandLandmarks(results) {
   updateDebugMetrics(smoothTip.x, smoothTip.y, currentRy, tipVy);
 
   // 5. 指定された指の骨格描画（表示フラグ showTrackingLines がONの時のみ描画）
+  // 描画遅延をゼロにするため、検出できたフレームでは生ランドマーク座標を直接描画する
   if (showTrackingLines) {
+    const getDrawPt = (idx, fallbackPt) => {
+      const lm = hasHands && landmarks && landmarks[idx];
+      return lm ? { x: lm.x * width, y: lm.y * height } : fallbackPt;
+    };
+    const drawP1 = getDrawPt(fingerConfig.p1Idx, smoothP1);
+    const drawP2 = getDrawPt(fingerConfig.p2Idx, smoothP2);
+    const drawP3 = getDrawPt(fingerConfig.p3Idx, smoothP3);
+    const drawTip = getDrawPt(fingerConfig.tipIdx, smoothTip);
+
     canvasCtx.save();
     canvasCtx.lineCap = "round";
     canvasCtx.lineJoin = "round";
@@ -3687,10 +3697,10 @@ function drawRawHandLandmarks(results) {
     // 共通骨格パス生成
     const drawBonePath = () => {
       canvasCtx.beginPath();
-      canvasCtx.moveTo(smoothP1.x, smoothP1.y);
-      canvasCtx.lineTo(smoothP2.x, smoothP2.y);
-      canvasCtx.lineTo(smoothP3.x, smoothP3.y);
-      canvasCtx.lineTo(smoothTip.x, smoothTip.y);
+      canvasCtx.moveTo(drawP1.x, drawP1.y);
+      canvasCtx.lineTo(drawP2.x, drawP2.y);
+      canvasCtx.lineTo(drawP3.x, drawP3.y);
+      canvasCtx.lineTo(drawTip.x, drawTip.y);
     };
 
     // 層1: 外側発光ハローライン（太さ 12px、半透明カラーでブラー相当のグロー感を表現）
@@ -3712,7 +3722,7 @@ function drawRawHandLandmarks(results) {
     canvasCtx.stroke();
 
     // 対象指関節点（P1, P2, P3）の多層描画（外側ハロー＋メイン＋白コア）
-    [smoothP1, smoothP2, smoothP3].forEach((pt) => {
+    [drawP1, drawP2, drawP3].forEach((pt) => {
       // 層1: 外側ハロー
       canvasCtx.beginPath();
       canvasCtx.arc(pt.x, pt.y, 8.0, 0, 2 * Math.PI);
@@ -3733,7 +3743,7 @@ function drawRawHandLandmarks(results) {
     });
 
     // 6. 対象指先端（TIP）のハイライトターゲット描画（多層発光リング＋白熱コア）
-    drawTipTargetMark(smoothTip.x, smoothTip.y, targetColor);
+    drawTipTargetMark(drawTip.x, drawTip.y, targetColor);
     canvasCtx.restore();
   }
 }
