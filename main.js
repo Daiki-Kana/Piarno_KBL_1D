@@ -139,13 +139,12 @@ let isVoiceLoaded = false;
 
 // Viteのベースパスに対応した音声ファイルパス
 const audioBasePath = (import.meta.env?.BASE_URL || "./").replace(/\/$/, "");
-const VOICE_CACHE_VER = "v4_no7_wav";
 const VOICE_FILES = {
-  a: `${audioBasePath}/audio/a.wav?v=${VOICE_CACHE_VER}`,
-  i: `${audioBasePath}/audio/i.wav?v=${VOICE_CACHE_VER}`,
-  u: `${audioBasePath}/audio/u.wav?v=${VOICE_CACHE_VER}`,
-  e: `${audioBasePath}/audio/e.wav?v=${VOICE_CACHE_VER}`,
-  o: `${audioBasePath}/audio/o.wav?v=${VOICE_CACHE_VER}`,
+  a: `${audioBasePath}/audio/a.mp3?v=orig`,
+  i: `${audioBasePath}/audio/i.mp3?v=orig`,
+  u: `${audioBasePath}/audio/u.mp3?v=orig`,
+  e: `${audioBasePath}/audio/e.mp3?v=orig`,
+  o: `${audioBasePath}/audio/o.mp3?v=orig`,
 };
 
 export const FINGER_TO_VOICE = {
