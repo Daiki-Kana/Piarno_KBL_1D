@@ -404,17 +404,18 @@ html, body {
 }
 
 /* ==========================================================================
-   右手運指ガイドウィジェット（文字に重ならない限界サイズで右下に配置）
+   右手運指ガイドウィジェット（文字カード下・中央寄りに限界サイズで配置）
    ========================================================================== */
 .hand-guide-widget {
-  --hand-guide-size: clamp(200px, min(calc(100dvh - 155px), calc(100vw - min(30vw, 220px) - 36px)), 440px);
+  --hand-guide-size: clamp(220px, min(calc(100dvh - 135px), calc(100vw - 40px)), 480px);
   position: absolute;
-  right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  right: auto;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   top: auto;
-  left: auto;
-  width: var(--hand-guide-size, 260px);
-  height: var(--hand-guide-size, 260px);
+  transform: translateX(-50%);
+  width: var(--hand-guide-size, 280px);
+  height: var(--hand-guide-size, 280px);
   background: transparent;
   border: none;
   box-shadow: none;
@@ -464,7 +465,9 @@ html, body {
   display: block;
   pointer-events: none;
   overflow: visible;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  transform: scale(1.18);
+  transform-origin: center bottom;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
 }
 
 /* 手全体の一体型シームレスベース（指定色 #FEDCBD、つなぎ目完全ゼロ） */
