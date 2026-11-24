@@ -154,6 +154,16 @@ const VOICE_FILES = {
   chi: `${audioBasePath}/audio/chi.mp3?v=v1`,
   ha: `${audioBasePath}/audio/ha.mp3?v=v1`,
   ba: `${audioBasePath}/audio/ba.mp3?v=v1`,
+  // 単語の流れから切り出した5音セット（イントネーション・声質統一版）
+  ...["aiueo_step", "arigatou_step", "konnichiwa_step", "konbanwa_step"].reduce(
+    (acc, wid) => {
+      for (let i = 1; i <= 5; i++) {
+        acc[`${wid}_${i}`] = `${audioBasePath}/audio/words/${wid}/${i}.mp3?v=w1`;
+      }
+      return acc;
+    },
+    {},
+  ),
 };
 
 export const FINGER_TO_VOICE = {
@@ -292,11 +302,18 @@ const KANA_TO_VOICE = {
 };
 
 /**
- * ステップの文字に応じた発声（全文字をWeb Audio APIバッファから即時再生）
+ * ステップの文字に応じた発声（単語・ステップ専用音声を優先し、未登録時のみ単音・SpeechSynthesisへフォールバック）
  * @param {string} note 発音する文字
  * @param {number} velocity 音量
+ * @param {string} songId 選択中の単語ID
+ * @param {number} stepNum ステップ番号(1〜5)
  */
-function playCharacterVoice(note, velocity = 1.0) {
+function playCharacterVoice(note, velocity = 1.0, songId = "", stepNum = 0) {
+  const wordStepKey = songId && stepNum ? `${songId}_${stepNum}` : "";
+  if (wordStepKey && voiceBuffers[wordStepKey]) {
+    playVoiceSound(wordStepKey, velocity, true);
+    return;
+  }
   const voiceKey = KANA_TO_VOICE[note];
   if (voiceKey) {
     playVoiceSound(voiceKey, velocity, true);
@@ -5307,9 +5324,14 @@ function drawRawHandLandmarks(results) {
       // 現在の音符を取得
       const currentTarget = currentSequence[currentSongStep];
 
-      // 右手メロディ音を発音（文字ごとに既存音声バッファまたは日本語SpeechSynthesis）
+      // 右手メロディ音を発音（単語の流れから切り出した専用音声バッファを優先再生）
       if (currentTarget.note) {
-        playCharacterVoice(currentTarget.note, MELODY_VELOCITY);
+        playCharacterVoice(
+          currentTarget.note,
+          MELODY_VELOCITY,
+          currentSongId,
+          currentTarget.step,
+        );
       } else if (currentTarget.fingerKey) {
         playVoiceSound(currentTarget.fingerKey, MELODY_VELOCITY, true);
       } else {
